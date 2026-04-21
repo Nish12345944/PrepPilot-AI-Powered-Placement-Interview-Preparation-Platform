@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Environment files (never commit real secrets)
+.env
+.env.local
+ai-services/.env
+backend/.env
+frontend/.env.local
+
+# Build outputs
+.next/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
+
+# Certs
+nginx/certs/
+
+# Stray directory from earlier mkdir -p error
+-p/

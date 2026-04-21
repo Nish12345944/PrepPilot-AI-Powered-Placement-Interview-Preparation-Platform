@@ -1,0 +1,6 @@
+{
+  "testEnvironment": "node",
+  "testMatch": ["**/__tests__/**/*.test.js"],
+  "collectCoverageFrom": ["src/**/*.js", "!src/server.js"],
+  "coverageThreshold": { "global": { "branches": 60, "functions": 60, "lines": 60 } }
+}
