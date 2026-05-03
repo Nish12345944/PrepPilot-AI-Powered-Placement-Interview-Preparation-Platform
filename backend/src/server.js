@@ -61,6 +61,55 @@ app.use('/api/planner', plannerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chat', chatRoutes);
 
+// Public endpoints for testing
+const { query } = require('./config/db');
+app.get('/api/public/companies', async (req, res) => {
+  const { rows } = await query(
+    `SELECT id, name, difficulty, focus_areas, 
+            (SELECT COUNT(*) FROM company_questions cq WHERE cq.company_id = c.id) as question_count
+     FROM companies c ORDER BY 
+       CASE difficulty 
+         WHEN 'easy' THEN 1 
+         WHEN 'medium' THEN 2 
+         WHEN 'hard' THEN 3 
+       END, name`
+  );
+  res.json(rows);
+});
+
+app.get('/api/public/questions', async (req, res) => {
+  const { company, difficulty, type, limit = 10 } = req.query;
+  
+  let queryText = `
+    SELECT q.id, q.title, q.description, q.type, q.difficulty, 
+           q.company_tags, q.options, q.time_limit_sec, q.xp_reward
+    FROM questions q
+    WHERE 1=1
+  `;
+  const params = [];
+  
+  if (company) {
+    queryText += ` AND $${params.length + 1} = ANY(q.company_tags)`;
+    params.push(company);
+  }
+  
+  if (difficulty) {
+    queryText += ` AND q.difficulty = $${params.length + 1}`;
+    params.push(difficulty);
+  }
+  
+  if (type) {
+    queryText += ` AND q.type = $${params.length + 1}`;
+    params.push(type);
+  }
+  
+  queryText += ` ORDER BY q.created_at DESC LIMIT $${params.length + 1}`;
+  params.push(parseInt(limit));
+  
+  const { rows } = await query(queryText, params);
+  res.json(rows);
+});
+
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 app.use(errorHandler);

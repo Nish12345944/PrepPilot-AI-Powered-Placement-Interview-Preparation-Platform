@@ -24,8 +24,9 @@ export default function ResumePage() {
       });
       setResume(data);
       toast.success('Resume uploaded successfully');
-    } catch {
-      toast.error('Upload failed');
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || 'Upload failed';
+      toast.error(msg);
     } finally {
       setUploading(false);
     }
@@ -40,8 +41,9 @@ export default function ResumePage() {
         job_description: jd,
       });
       setAnalysis(data);
-    } catch {
-      toast.error('Analysis failed');
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || 'Analysis failed';
+      toast.error(msg);
     } finally {
       setAnalyzing(false);
     }

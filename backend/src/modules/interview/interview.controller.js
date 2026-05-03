@@ -2,6 +2,55 @@ const { query } = require('../../config/db');
 const axios = require('axios');
 const redis = require('../../config/redis');
 
+// Get all companies with their difficulty levels
+const getCompanies = async (req, res) => {
+  const { rows } = await query(
+    `SELECT id, name, difficulty, focus_areas, 
+            (SELECT COUNT(*) FROM company_questions cq WHERE cq.company_id = c.id) as question_count
+     FROM companies c ORDER BY 
+       CASE difficulty 
+         WHEN 'easy' THEN 1 
+         WHEN 'medium' THEN 2 
+         WHEN 'hard' THEN 3 
+       END, name`
+  );
+  res.json(rows);
+};
+
+// Get questions by company and difficulty
+const getQuestionsByCompany = async (req, res) => {
+  const { company, difficulty, type, limit = 10 } = req.query;
+  
+  let queryText = `
+    SELECT q.id, q.title, q.description, q.type, q.difficulty, 
+           q.company_tags, q.options, q.time_limit_sec, q.xp_reward
+    FROM questions q
+    WHERE 1=1
+  `;
+  const params = [];
+  
+  if (company) {
+    queryText += ` AND $${params.length + 1} = ANY(q.company_tags)`;
+    params.push(company);
+  }
+  
+  if (difficulty) {
+    queryText += ` AND q.difficulty = $${params.length + 1}`;
+    params.push(difficulty);
+  }
+  
+  if (type) {
+    queryText += ` AND q.type = $${params.length + 1}`;
+    params.push(type);
+  }
+  
+  queryText += ` ORDER BY q.created_at DESC LIMIT $${params.length + 1}`;
+  params.push(parseInt(limit));
+  
+  const { rows } = await query(queryText, params);
+  res.json(rows);
+};
+
 // Start a new interview session
 const startSession = async (req, res) => {
   const { session_type, company_target, is_strict_mode, question_count = 10 } = req.body;
@@ -194,4 +243,4 @@ const awardXP = async (userId, amount, reason, referenceId) => {
   );
 };
 
-module.exports = { startSession, submitResponse, completeSession, getSessions };
+module.exports = { startSession, submitResponse, completeSession, getSessions, getCompanies, getQuestionsByCompany };

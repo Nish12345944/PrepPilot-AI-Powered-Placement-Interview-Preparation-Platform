@@ -8,7 +8,10 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
     const allowed = ['.pdf', '.doc', '.docx'];
-    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+    if (!allowed.includes(path.extname(file.originalname).toLowerCase())) {
+      return cb(new Error('Only PDF, DOC, and DOCX files are allowed'));
+    }
+    cb(null, true);
   },
 });
 
@@ -21,7 +24,8 @@ const uploadResume = async (req, res) => {
   // Parse resume text via AI service
   const { data: parsed } = await axios.post(
     `${process.env.AI_RESUME_URL}/parse`,
-    { file_content: req.file.buffer.toString('base64'), file_type: req.file.mimetype }
+    { file_content: req.file.buffer.toString('base64'), file_type: req.file.mimetype },
+    { timeout: 30000 }
   );
 
   // Deactivate old resumes
@@ -73,6 +77,16 @@ const analyzeResume = async (req, res) => {
   res.json(rows[0]);
 };
 
+// Handle multer errors (file type / size)
+const handleUploadError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large. Max 5MB.' });
+    return res.status(400).json({ error: err.message });
+  }
+  if (err) return res.status(400).json({ error: err.message });
+  next();
+};
+
 const getAnalyses = async (req, res) => {
   const { rows } = await query(
     `SELECT ra.*, r.file_url FROM resume_analyses ra
@@ -83,4 +97,4 @@ const getAnalyses = async (req, res) => {
   res.json(rows);
 };
 
-module.exports = { upload, uploadResume, analyzeResume, getAnalyses };
+module.exports = { upload, handleUploadError, uploadResume, analyzeResume, getAnalyses };

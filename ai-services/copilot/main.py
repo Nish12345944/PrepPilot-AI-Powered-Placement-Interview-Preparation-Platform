@@ -4,16 +4,72 @@ Port: 8004
 """
 import os
 import json
+import random
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional
-from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = FastAPI(title="PrepPilot Copilot AI", version="1.0.0")
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Mock responses for when OpenAI API is not available
+MOCK_RESPONSES = {
+    "explain_concept": [
+        "Great question! Let me break this down for you step by step...",
+        "This is a fundamental concept in computer science. Here's how it works...",
+        "I'd be happy to explain this! The key points to understand are..."
+    ],
+    "debug_code": [
+        "I can help you debug this! Let me analyze the issue and provide a solution...",
+        "Looking at your code, I can see the problem. Here's what's happening and how to fix it...",
+        "This is a common error. Let me walk you through the debugging process..."
+    ],
+    "interview_prep": [
+        "Excellent interview question! Here's how I'd structure the answer using the STAR method...",
+        "This is a popular question at top tech companies. Let me give you a comprehensive answer...",
+        "Great practice question! For technical interviews, I recommend this approach..."
+    ],
+    "roadmap": [
+        "I'll create a personalized study roadmap for you based on your target company and current level...",
+        "Here's a structured learning path that will help you reach your goals...",
+        "Let me design a timeline that balances theory, practice, and real-world application..."
+    ],
+    "resume_help": [
+        "I can definitely help optimize your resume for ATS systems and recruiters...",
+        "Let's make your resume stand out! Here are the key improvements I recommend...",
+        "Your resume is your first impression. Let me help you make it compelling..."
+    ],
+    "company_prep": [
+        "Preparing for top tech companies requires a strategic approach. Here's what you need to focus on...",
+        "Each company has unique interview patterns. Let me share insights specific to your target...",
+        "I'll help you understand the company culture and what they're looking for in candidates..."
+    ],
+    "motivation": [
+        "I understand it can be challenging! Remember, every expert was once a beginner. Here's how to stay motivated...",
+        "Feeling stuck is part of the learning process. Let me help you break through this barrier...",
+        "You're not alone in this journey! Here are some strategies to regain momentum..."
+    ],
+    "general": [
+        "I'm here to help with your career preparation! What specific area would you like to focus on?",
+        "Great question! Let me provide you with some practical guidance...",
+        "I'd be happy to assist you with that! Here's my recommendation..."
+    ]
+}
+
+# Check if OpenAI API key is available and valid
+USE_OPENAI = os.getenv("OPENAI_API_KEY") and not os.getenv("OPENAI_API_KEY").startswith("sk-placeholder")
+
+if USE_OPENAI:
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    except ImportError:
+        USE_OPENAI = False
+        print("OpenAI package not available, using mock responses")
+else:
+    print("Using mock responses (OpenAI API key not configured)")
 
 # ── Models ───────────────────────────────────────────────────────────────────
 

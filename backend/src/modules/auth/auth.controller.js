@@ -1,8 +1,15 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const { query } = require('../../config/db');
 const redis = require('../../config/redis');
-const { v4: uuidv4 } = require('uuid');
+
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT) || 587,
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+});
 
 const generateTokens = (userId) => {
   const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET, {
@@ -136,4 +143,61 @@ const getMe = async (req, res) => {
   res.json(rows[0]);
 };
 
-module.exports = { register, login, refresh, logout, getMe };
+const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  const { rows } = await query('SELECT id FROM users WHERE email = $1', [email]);
+  // Always respond 200 to prevent email enumeration
+  if (!rows[0]) return res.json({ message: 'If that email exists, a reset link has been sent.' });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = await bcrypt.hash(token, 8);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  await query(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT DO NOTHING`,
+    [rows[0].id, tokenHash, expiresAt]
+  );
+
+  const resetUrl = `${process.env.FRONTEND_URL}/auth/reset-password?token=${token}&id=${rows[0].id}`;
+
+  await mailer.sendMail({
+    from: process.env.EMAIL_FROM,
+    to: email,
+    subject: 'PrepPilot – Reset your password',
+    html: `<p>Click the link below to reset your password. It expires in 1 hour.</p>
+           <a href="${resetUrl}">${resetUrl}</a>
+           <p>If you didn't request this, ignore this email.</p>`,
+  });
+
+  res.json({ message: 'If that email exists, a reset link has been sent.' });
+};
+
+const resetPassword = async (req, res) => {
+  const { userId, token, password } = req.body;
+
+  const { rows } = await query(
+    `SELECT * FROM password_reset_tokens
+     WHERE user_id = $1 AND expires_at > NOW() AND used = FALSE`,
+    [userId]
+  );
+
+  let validRow = null;
+  for (const row of rows) {
+    if (await bcrypt.compare(token, row.token_hash)) { validRow = row; break; }
+  }
+
+  if (!validRow) return res.status(400).json({ error: 'Invalid or expired reset link.' });
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, userId]);
+  await query('UPDATE password_reset_tokens SET used = TRUE WHERE id = $1', [validRow.id]);
+  // Revoke all refresh tokens so old sessions are invalidated
+  await query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
+
+  res.json({ message: 'Password reset successfully. Please log in.' });
+};
+
+module.exports = { register, login, refresh, logout, getMe, forgotPassword, resetPassword };
