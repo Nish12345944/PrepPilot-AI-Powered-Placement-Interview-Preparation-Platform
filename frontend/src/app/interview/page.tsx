@@ -30,7 +30,7 @@ export default function InterviewSetupPage() {
   const [config, setConfig] = useState({
     session_type: 'technical',
     company_target: 'General',
-    response_mode: 'text' as 'text' | 'audio_video',
+    response_mode: 'audio_video' as 'audio_video',
     is_strict_mode: false,
     question_count: 10,
   });
@@ -177,27 +177,14 @@ export default function InterviewSetupPage() {
               </button>
             </div>
 
-            <div>
-              <p className="text-white text-sm">Response Mode</p>
-              <p className="text-slate-400 text-xs">Answer by typing or by speaking with live video</p>
-              <div className="mt-3 flex gap-2 flex-wrap">
-                {[
-                  { value: 'text', label: 'Text Answer' },
-                  { value: 'audio_video', label: 'Audio + Video' },
-                ].map((mode) => (
-                  <button
-                    key={mode.value}
-                    onClick={() => setConfig({ ...config, response_mode: mode.value as 'text' | 'audio_video' })}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      config.response_mode === mode.value
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white text-sm">Response Mode</p>
+                <p className="text-slate-400 text-xs">Audio + Video with AI transcription</p>
               </div>
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-300 text-sm font-medium">
+                <Mic size={14} /> Audio + Video
+              </span>
             </div>
           </div>
 

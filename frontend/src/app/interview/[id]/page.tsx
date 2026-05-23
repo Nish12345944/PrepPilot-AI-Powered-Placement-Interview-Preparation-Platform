@@ -26,7 +26,7 @@ export default function InterviewSessionPage() {
   const [questions, setQuestions] = useState<any[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answer, setAnswer] = useState('');
-  const [responseMode, setResponseMode] = useState<'text' | 'audio_video'>('text');
+  const [responseMode] = useState<'audio_video'>('audio_video');
   const [timeLeft, setTimeLeft] = useState(300);
   const [evaluation, setEvaluation] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +58,6 @@ export default function InterviewSessionPage() {
         const parsed = JSON.parse(stored);
         const qs = Array.isArray(parsed) ? parsed : parsed.questions || [];
         setQuestions(qs);
-        setResponseMode(parsed.responseMode || 'text');
         setTimeLeft(qs[0]?.time_limit_sec || 300);
         setPhase('question');
         return;
@@ -228,9 +227,7 @@ export default function InterviewSessionPage() {
           clearInterval(timerRef.current!);
           if (!submittedRef.current) {
             submittedRef.current = true;
-            if (responseMode === 'audio_video' && recording) {
-              stopRecording();
-            }
+            if (recording) stopRecording();
             submitAnswer(answerRef.current || '(No answer — time expired)');
           }
           return 0;
@@ -240,7 +237,7 @@ export default function InterviewSessionPage() {
     }, 1000);
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [phase, currentIdx, responseMode, recording]);
+  }, [phase, currentIdx, recording]);
 
   const submitAnswer = useCallback(async (ans: string) => {
     if (submitting) return;
@@ -389,109 +386,76 @@ export default function InterviewSessionPage() {
 
       {/* Answer / Evaluation */}
       {phase === 'question' && (
-        <div className="space-y-3">
-          {responseMode === 'audio_video' ? (
-            <div className="space-y-4">
-              <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
-                <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
-                  <p className="text-slate-300 text-sm mb-3">Live preview</p>
-                  <div className="relative overflow-hidden rounded-xl bg-black/80">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      muted
-                      playsInline
-                      className="h-72 w-full object-cover bg-slate-900"
-                    />
-                    {captureError && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-sm text-red-300 p-4">
-                        {captureError}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
-                    <p className="text-white text-sm font-medium mb-2">Speaking instructions</p>
-                    <p className="text-slate-400 text-sm leading-relaxed">
-                      Record your answer with audio and video, then transcribe it to send to the AI evaluator.
-                    </p>
-                  </div>
-                  <div className="grid gap-2">
-                    <button
-                      onClick={startRecording}
-                      disabled={recording}
-                      className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl"
-                    >
-                      Start Recording
-                    </button>
-                    <button
-                      onClick={stopRecording}
-                      disabled={!recording}
-                      className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl"
-                    >
-                      Stop Recording
-                    </button>
-                    <button
-                      onClick={handleUploadRecording}
-                      disabled={recording || !recordedBlob || transcribing}
-                      className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl"
-                    >
-                      {transcribing ? 'Transcribing...' : 'Upload & Transcribe'}
-                    </button>
-                    <button
-                      onClick={retryRecording}
-                      className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl"
-                    >
-                      Retry Recording
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-slate-400 text-xs">
-                  <span>{recording ? 'Recording...' : recordedBlob ? 'Recording ready' : 'No recording yet'}</span>
-                  <span>{transcript ? 'Transcript available' : 'Transcript pending'}</span>
-                </div>
-                <textarea
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  placeholder={recordedBlob ? 'Edit your transcribed answer...' : 'Record and transcribe to see your answer here.'}
-                  rows={8}
-                  className="w-full bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none text-sm leading-relaxed"
-                  disabled={!recordedBlob && !transcribing}
+        <div className="space-y-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
+            <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+              <p className="text-slate-300 text-sm mb-3">Live preview</p>
+              <div className="relative overflow-hidden rounded-xl bg-black/80">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="h-72 w-full object-cover bg-slate-900"
                 />
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting || !answer.trim()}
-                  className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
-                >
-                  {submitting && <RefreshCw size={16} className="animate-spin" />}
-                  {submitting ? 'Evaluating with AI...' : 'Submit Answer'}
+                {captureError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-sm text-red-300 p-4">
+                    {captureError}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
+                <p className="text-white text-sm font-medium mb-2">Instructions</p>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  Record your answer, then transcribe it to send to the AI evaluator.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <button onClick={startRecording} disabled={recording}
+                  className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl">
+                  Start Recording
+                </button>
+                <button onClick={stopRecording} disabled={!recording}
+                  className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl">
+                  Stop Recording
+                </button>
+                <button onClick={handleUploadRecording} disabled={recording || !recordedBlob || transcribing}
+                  className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl">
+                  {transcribing ? 'Transcribing...' : 'Upload & Transcribe'}
+                </button>
+                <button onClick={retryRecording}
+                  className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl">
+                  Retry
                 </button>
               </div>
             </div>
-          ) : (
-            <>
-              <textarea
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder="Type your answer here..."
-                rows={8}
-                className="w-full bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none text-sm leading-relaxed"
-              />
-              <button
-                onClick={handleSubmit}
-                disabled={submitting || !answer.trim()}
-                className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
-                {submitting && <RefreshCw size={16} className="animate-spin" />}
-                {submitting ? 'Evaluating with AI...' : 'Submit Answer'}
-              </button>
-            </>
-          )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-slate-400 text-xs">
+              <span>{recording ? 'Recording...' : recordedBlob ? 'Recording ready' : 'No recording yet'}</span>
+              <span>{transcript ? 'Transcript available' : 'Transcript pending'}</span>
+            </div>
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              placeholder={recordedBlob ? 'Edit your transcribed answer...' : 'Record and transcribe to see your answer here.'}
+              rows={6}
+              className="w-full bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none text-sm leading-relaxed"
+              disabled={!recordedBlob && !transcribing}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !answer.trim()}
+              className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              {submitting && <RefreshCw size={16} className="animate-spin" />}
+              {submitting ? 'Evaluating with AI...' : 'Submit Answer'}
+            </button>
+          </div>
         </div>
       )}
 
