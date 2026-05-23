@@ -19,7 +19,8 @@ const getProblems = async (req, res) => {
             up.mastery_score
      FROM questions q
      JOIN topics t ON t.id = q.topic_id
-     LEFT JOIN code_submissions cs ON cs.problem_id = q.id AND cs.user_id = $1
+     LEFT JOIN coding_problems cp2 ON cp2.question_id = q.id
+     LEFT JOIN code_submissions cs ON cs.problem_id = cp2.id AND cs.user_id = $1
        AND cs.status = 'accepted'
      LEFT JOIN user_performance up ON up.topic_id = q.topic_id AND up.user_id = $1
      WHERE q.type = 'coding' ${filters}
@@ -57,9 +58,9 @@ const submitCode = async (req, res) => {
   const { problem_id, language, code } = req.body;
   const userId = req.user.id;
 
-  // Get test cases (including hidden)
+  // Get test cases (including hidden) — problem_id is questions.id from frontend
   const { rows: problems } = await query(
-    'SELECT cp.test_cases, q.id FROM coding_problems cp JOIN questions q ON q.id = cp.question_id WHERE cp.question_id = $1',
+    'SELECT cp.id as cp_id, cp.test_cases FROM coding_problems cp WHERE cp.question_id = $1',
     [problem_id]
   );
 
@@ -71,12 +72,14 @@ const submitCode = async (req, res) => {
     { code, language, test_cases: problems[0].test_cases }
   );
 
+  const cpId = problems[0].cp_id;
+
   const { rows } = await query(
     `INSERT INTO code_submissions
        (user_id, problem_id, language, code, status, test_results, runtime_ms, memory_kb, ai_feedback)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
     [
-      userId, problem_id, language, code,
+      userId, cpId, language, code,
       judgeResult.status, JSON.stringify(judgeResult.test_results),
       judgeResult.runtime_ms, judgeResult.memory_kb,
       JSON.stringify(judgeResult.ai_feedback)
@@ -94,14 +97,36 @@ const submitCode = async (req, res) => {
 };
 
 const getSubmissions = async (req, res) => {
-  const { problem_id } = req.params;
+  const { problem_id } = req.params; // this is questions.id
   const { rows } = await query(
-    `SELECT id, language, status, runtime_ms, memory_kb, submitted_at
-     FROM code_submissions WHERE user_id = $1 AND problem_id = $2
-     ORDER BY submitted_at DESC LIMIT 10`,
+    `SELECT cs.id, cs.language, cs.status, cs.runtime_ms, cs.memory_kb, cs.submitted_at
+     FROM code_submissions cs
+     JOIN coding_problems cp ON cp.id = cs.problem_id
+     WHERE cs.user_id = $1 AND cp.question_id = $2
+     ORDER BY cs.submitted_at DESC LIMIT 10`,
     [req.user.id, problem_id]
   );
   res.json(rows);
 };
 
-module.exports = { getProblems, getProblemById, submitCode, getSubmissions };
+const getHint = async (req, res) => {
+  const { problem_id, code, language, error, wrong_cases, hint_level } = req.body;
+
+  const { rows } = await query(
+    'SELECT q.title, q.description FROM questions q WHERE q.id = $1',
+    [problem_id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Problem not found' });
+
+  const { data } = await axios.post(`${process.env.AI_INTERVIEW_URL}/hint`, {
+    code, language,
+    problem_title: rows[0].title,
+    problem_description: rows[0].description,
+    error: error || null,
+    wrong_cases: wrong_cases || [],
+    hint_level: hint_level || 1,
+  });
+  res.json(data);
+};
+
+module.exports = { getProblems, getProblemById, submitCode, getSubmissions, getHint };

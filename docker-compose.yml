@@ -9,6 +9,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/company_questions.sql:/docker-entrypoint-initdb.d/02-company-questions.sql
+      - ./database/seed_coding.sql:/docker-entrypoint-initdb.d/03-seed-coding.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -35,6 +37,7 @@ services:
     build: ./backend
     env_file: ./backend/.env
     environment:
+      DATABASE_URL: postgresql://preppilot:preppilot_dev_pass@postgres:5432/preppilot_db
       REDIS_URL: redis://redis:6379
       AI_INTERVIEW_URL: http://ai-interview:8001
       AI_LEARNING_URL: http://ai-learning:8002

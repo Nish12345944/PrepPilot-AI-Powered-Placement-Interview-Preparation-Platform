@@ -1,9 +1,9 @@
 FROM python:3.11-slim
 WORKDIR /app
 
-# System deps for PyPDF2 and psycopg2
+# System deps: gcc/g++ for C++, JDK for Java, Node for JS, libpq for psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+    gcc g++ libpq-dev default-jdk nodejs && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

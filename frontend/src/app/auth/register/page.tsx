@@ -17,7 +17,16 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await register(form);
+      const payload = {
+        email: form.email,
+        password: form.password,
+        full_name: form.full_name,
+        target_company: form.target_company || undefined,
+        target_role: form.target_role || undefined,
+        college: form.college || undefined,
+        graduation_year: form.graduation_year ? Number(form.graduation_year) : undefined,
+      };
+      await register(payload);
       router.push('/dashboard');
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Registration failed');

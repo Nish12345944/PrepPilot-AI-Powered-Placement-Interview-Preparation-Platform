@@ -59,16 +59,19 @@ MOCK_RESPONSES = {
 }
 
 # Check if OpenAI API key is available and valid
-USE_OPENAI = os.getenv("OPENAI_API_KEY") and not os.getenv("OPENAI_API_KEY").startswith("sk-placeholder")
+_api_key = os.getenv("OPENAI_API_KEY", "")
+USE_OPENAI = bool(_api_key) and _api_key.startswith("sk-") and _api_key not in ("sk-placeholder", "your_openai_key", "sk-...")
 
 if USE_OPENAI:
     try:
         from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = AsyncOpenAI(api_key=_api_key)
     except ImportError:
         USE_OPENAI = False
+        client = None
         print("OpenAI package not available, using mock responses")
 else:
+    client = None
     print("Using mock responses (OpenAI API key not configured)")
 
 # ── Models ───────────────────────────────────────────────────────────────────
@@ -144,17 +147,24 @@ async def chat(req: ChatRequest):
     # Add current message
     messages.append({"role": "user", "content": req.message})
 
-    response = await client.chat.completions.create(
-        model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
-        messages=messages,
-        temperature=0.6,
-        max_tokens=1000,
-    )
+    if USE_OPENAI and client:
+        response = await client.chat.completions.create(
+            model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
+            messages=messages,
+            temperature=0.6,
+            max_tokens=1000,
+        )
+        return {
+            "response": response.choices[0].message.content,
+            "intent": intent,
+            "tokens_used": response.usage.total_tokens,
+        }
 
+    # Fallback to mock responses
     return {
-        "response": response.choices[0].message.content,
+        "response": random.choice(MOCK_RESPONSES.get(intent, MOCK_RESPONSES["general"])),
         "intent": intent,
-        "tokens_used": response.usage.total_tokens,
+        "tokens_used": 0,
     }
 
 @app.get("/health")

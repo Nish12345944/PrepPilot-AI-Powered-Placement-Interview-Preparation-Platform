@@ -117,7 +117,12 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
-  await redis.connect();
+  try {
+    await redis.connect();
+  } catch (err) {
+    logger.warn('Redis connection failed. Server will continue without Redis.');
+  }
+
   server.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
 };
 
