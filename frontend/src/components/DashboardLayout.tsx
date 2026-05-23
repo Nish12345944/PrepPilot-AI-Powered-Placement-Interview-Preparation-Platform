@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import {
   LayoutDashboard, Mic, Code2, FileText, MessageSquare,
-  Calendar, Trophy, LogOut, Zap,
+  Calendar, Trophy, LogOut, Zap, Building2,
 } from 'lucide-react';
 
 const NAV = [
@@ -15,6 +15,7 @@ const NAV = [
   { href: '/copilot',     label: 'Copilot',     icon: MessageSquare },
   { href: '/planner',     label: 'Planner',     icon: Calendar },
   { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+  { href: '/companies',   label: 'Companies',   icon: Building2 },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
