@@ -1,64 +1,19 @@
 """
-AI Copilot Service – career chatbot with intent detection and personalized guidance.
+AI Copilot Service – expert career coach + technical mentor chatbot.
 Port: 8004
 """
 import os
 import json
-import random
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="PrepPilot Copilot AI", version="1.0.0")
+app = FastAPI(title="PrepPilot Copilot AI", version="2.0.0")
 
-# Mock responses for when OpenAI API is not available
-MOCK_RESPONSES = {
-    "explain_concept": [
-        "Great question! Let me break this down for you step by step...",
-        "This is a fundamental concept in computer science. Here's how it works...",
-        "I'd be happy to explain this! The key points to understand are..."
-    ],
-    "debug_code": [
-        "I can help you debug this! Let me analyze the issue and provide a solution...",
-        "Looking at your code, I can see the problem. Here's what's happening and how to fix it...",
-        "This is a common error. Let me walk you through the debugging process..."
-    ],
-    "interview_prep": [
-        "Excellent interview question! Here's how I'd structure the answer using the STAR method...",
-        "This is a popular question at top tech companies. Let me give you a comprehensive answer...",
-        "Great practice question! For technical interviews, I recommend this approach..."
-    ],
-    "roadmap": [
-        "I'll create a personalized study roadmap for you based on your target company and current level...",
-        "Here's a structured learning path that will help you reach your goals...",
-        "Let me design a timeline that balances theory, practice, and real-world application..."
-    ],
-    "resume_help": [
-        "I can definitely help optimize your resume for ATS systems and recruiters...",
-        "Let's make your resume stand out! Here are the key improvements I recommend...",
-        "Your resume is your first impression. Let me help you make it compelling..."
-    ],
-    "company_prep": [
-        "Preparing for top tech companies requires a strategic approach. Here's what you need to focus on...",
-        "Each company has unique interview patterns. Let me share insights specific to your target...",
-        "I'll help you understand the company culture and what they're looking for in candidates..."
-    ],
-    "motivation": [
-        "I understand it can be challenging! Remember, every expert was once a beginner. Here's how to stay motivated...",
-        "Feeling stuck is part of the learning process. Let me help you break through this barrier...",
-        "You're not alone in this journey! Here are some strategies to regain momentum..."
-    ],
-    "general": [
-        "I'm here to help with your career preparation! What specific area would you like to focus on?",
-        "Great question! Let me provide you with some practical guidance...",
-        "I'd be happy to assist you with that! Here's my recommendation..."
-    ]
-}
-
-# Check if OpenAI API key is available and valid
 _api_key = os.getenv("OPENAI_API_KEY", "")
 USE_OPENAI = bool(_api_key) and _api_key.startswith("sk-") and _api_key not in ("sk-placeholder", "your_openai_key", "sk-...")
 
@@ -69,28 +24,29 @@ if USE_OPENAI:
     except ImportError:
         USE_OPENAI = False
         client = None
-        print("OpenAI package not available, using mock responses")
 else:
     client = None
-    print("Using mock responses (OpenAI API key not configured)")
 
-# ── Models ───────────────────────────────────────────────────────────────────
+MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
+
+# ── Models ────────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     message: str
-    history: List[dict]  # [{role, content}]
+    history: List[dict]
     user_context: dict
 
-# ── Intent Detection ─────────────────────────────────────────────────────────
+# ── Intent Detection ──────────────────────────────────────────────────────────
 
 INTENTS = {
-    "explain_concept": ["explain", "what is", "how does", "define", "tell me about"],
-    "debug_code": ["debug", "error", "fix", "wrong", "not working", "issue"],
-    "interview_prep": ["interview", "prepare", "practice", "question", "answer"],
-    "roadmap": ["roadmap", "plan", "what to study", "next", "path", "schedule"],
-    "resume_help": ["resume", "cv", "ats", "job description", "apply"],
-    "company_prep": ["amazon", "google", "microsoft", "tcs", "infosys", "company"],
-    "motivation": ["stuck", "demotivated", "help", "struggling", "confused"],
+    "debug_code":     ["debug", "error", "fix", "wrong", "not working", "issue", "bug", "exception", "traceback", "fails"],
+    "explain_concept":["explain", "what is", "how does", "define", "tell me about", "difference between", "what are", "how do"],
+    "write_code":     ["write", "implement", "code for", "create a function", "program to", "solution for"],
+    "interview_prep": ["interview", "prepare", "practice", "how to answer", "tell me about yourself", "star method"],
+    "roadmap":        ["roadmap", "plan", "what to study", "how to prepare", "path", "schedule", "timeline", "where to start"],
+    "resume_help":    ["resume", "cv", "ats", "job description", "cover letter"],
+    "company_prep":   ["amazon", "google", "microsoft", "tcs", "infosys", "accenture", "wipro", "cognizant", "deloitte", "cisco"],
+    "complexity":     ["time complexity", "space complexity", "big o", "optimize", "efficient"],
 }
 
 def detect_intent(message: str) -> str:
@@ -100,35 +56,88 @@ def detect_intent(message: str) -> str:
             return intent
     return "general"
 
-# ── System Prompt Builder ─────────────────────────────────────────────────────
+# ── System Prompt ─────────────────────────────────────────────────────────────
 
 def build_system_prompt(user_context: dict, intent: str) -> str:
-    target = user_context.get("target_company", "top tech companies")
-    role = user_context.get("target_role", "Software Engineer")
-    level = user_context.get("level", 1)
-    weak = user_context.get("weak_topics", [])
-    skills = user_context.get("skills", [])
+    target  = user_context.get("target_company") or "top tech companies"
+    role    = user_context.get("target_role")    or "Software Engineer"
+    level   = user_context.get("level", 1)
+    weak    = user_context.get("weak_topics")    or []
+    skills  = user_context.get("skills")         or []
 
-    base = f"""You are PrepPilot Copilot, an expert AI career coach and technical mentor.
-User Profile: Targeting {role} at {target}, Level {level}/10.
-Known Skills: {', '.join(skills[:5]) if skills else 'Not specified'}.
-Weak Areas: {', '.join(weak[:3]) if weak else 'Not identified yet'}.
+    weak_str   = ", ".join(weak[:4])   if weak   else "not identified yet"
+    skills_str = ", ".join(skills[:6]) if skills else "not specified"
 
-Guidelines:
-- Be concise, practical, and encouraging
-- For code questions, provide working examples
-- For interview questions, give structured STAR/technical answers
-- Always relate advice to the user's target company when relevant
-- Current intent detected: {intent}"""
+    system = f"""You are PrepPilot Copilot — an expert AI assistant combining the knowledge of a senior software engineer, technical interview coach, and career mentor.
 
-    intent_additions = {
-        "debug_code": "\nFocus on identifying the bug, explaining why it occurs, and providing the fixed code.",
-        "interview_prep": "\nProvide a model answer using proper structure (for technical: approach → code → complexity; for HR: STAR method).",
-        "roadmap": "\nProvide a specific, time-bound study plan with daily/weekly milestones.",
-        "company_prep": f"\nFocus specifically on {target}'s interview process, question patterns, and evaluation criteria.",
+## User Profile
+- Target Role: {role} at {target}
+- Current Level: {level}
+- Skills: {skills_str}
+- Weak Areas: {weak_str}
+
+## Your Behavior
+- Give **complete, detailed, accurate answers** — never truncate or say "I'll explain later"
+- For **coding questions**: always provide full working code with comments, time/space complexity, and explanation
+- For **concept questions**: explain clearly with analogies, examples, and real-world use cases
+- For **interview questions**: give a model answer (STAR for HR, approach+code+complexity for technical)
+- For **debugging**: identify the exact bug, explain why it happens, show the fixed code
+- For **company prep**: give specific, actionable advice about that company's interview process
+- Use **markdown formatting**: headers, bullet points, code blocks (```language), bold for key terms
+- Be **direct and confident** — no filler phrases like "Great question!" or "Certainly!"
+- Always **tailor advice** to the user's target company ({target}) and role ({role}) when relevant
+- If asked about DSA, provide the optimal solution with explanation of the approach
+- Keep responses **thorough but scannable** — use structure so the user can quickly find what they need"""
+
+    intent_addons = {
+        "debug_code":      "\n\n## Current Task: Debugging\nIdentify the root cause, explain it clearly, then provide the corrected code.",
+        "write_code":      "\n\n## Current Task: Code Implementation\nProvide a complete, working solution with: 1) Approach explanation 2) Full code 3) Time & space complexity 4) Example walkthrough.",
+        "explain_concept": "\n\n## Current Task: Concept Explanation\nStructure your answer as: Definition → How it works → Example → When to use it → Common interview questions about it.",
+        "interview_prep":  f"\n\n## Current Task: Interview Preparation\nGive a complete model answer optimized for {target}'s interview style.",
+        "roadmap":         f"\n\n## Current Task: Study Roadmap\nCreate a specific week-by-week plan for {role} at {target} with daily time commitments.",
+        "company_prep":    f"\n\n## Current Task: Company-Specific Prep\nFocus on {target}'s exact interview rounds, question patterns, evaluation criteria, and tips from real candidates.",
+        "complexity":      "\n\n## Current Task: Complexity Analysis\nExplain the time and space complexity with step-by-step derivation and suggest optimizations.",
     }
 
-    return base + intent_additions.get(intent, "")
+    return system + intent_addons.get(intent, "")
+
+# ── Fallback answers (when no OpenAI key) ─────────────────────────────────────
+
+FALLBACK_ANSWERS = {
+    "explain_concept": """I can explain that concept for you!
+
+**Note:** The AI service is currently running without an OpenAI API key, so I'm providing a structured template response.
+
+To get full AI-powered answers like ChatGPT, please:
+1. Add your OpenAI API key to `ai-services/.env` as `OPENAI_API_KEY=sk-...`
+2. Restart the `ai-copilot` container
+
+**In the meantime**, here's how to approach learning any CS concept:
+- **Definition**: What is it?
+- **How it works**: Step-by-step mechanism
+- **Example**: Concrete code/scenario
+- **Use cases**: When to apply it
+- **Interview angle**: Common questions about it
+
+Try asking me again once the API key is configured for a complete answer!""",
+
+    "general": """I'm PrepPilot Copilot — your AI career coach!
+
+**⚠️ OpenAI API key not configured.** To enable full ChatGPT-quality responses:
+
+1. Open `ai-services/.env`
+2. Set `OPENAI_API_KEY=sk-your-key-here`
+3. Run `docker compose restart ai-copilot`
+
+**I can help you with:**
+- 💻 DSA problems & code debugging
+- 🎯 Interview preparation (technical + HR)
+- 🗺️ Study roadmaps for specific companies
+- 📄 Resume & ATS optimization
+- 🏢 Company-specific prep (Amazon, Google, TCS, etc.)
+
+What would you like to work on?"""
+}
 
 # ── Chat Endpoint ─────────────────────────────────────────────────────────────
 
@@ -137,36 +146,39 @@ async def chat(req: ChatRequest):
     intent = detect_intent(req.message)
     system_prompt = build_system_prompt(req.user_context, intent)
 
-    # Build messages array with history
     messages = [{"role": "system", "content": system_prompt}]
 
-    # Add conversation history (last 8 exchanges)
-    for msg in req.history[-8:]:
-        messages.append({"role": msg["role"], "content": msg["content"]})
+    # Include last 12 messages for context (6 exchanges)
+    for msg in req.history[-12:]:
+        if msg.get("role") in ("user", "assistant") and msg.get("content"):
+            messages.append({"role": msg["role"], "content": msg["content"]})
 
-    # Add current message
     messages.append({"role": "user", "content": req.message})
 
     if USE_OPENAI and client:
-        response = await client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
-            messages=messages,
-            temperature=0.6,
-            max_tokens=1000,
-        )
-        return {
-            "response": response.choices[0].message.content,
-            "intent": intent,
-            "tokens_used": response.usage.total_tokens,
-        }
+        try:
+            response = await client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                temperature=0.4,
+                max_tokens=2500,
+            )
+            return {
+                "response": response.choices[0].message.content,
+                "intent": intent,
+                "tokens_used": response.usage.total_tokens,
+            }
+        except Exception as e:
+            return {
+                "response": f"AI service error: {str(e)}\n\nPlease check your OpenAI API key and try again.",
+                "intent": intent,
+                "tokens_used": 0,
+            }
 
-    # Fallback to mock responses
-    return {
-        "response": random.choice(MOCK_RESPONSES.get(intent, MOCK_RESPONSES["general"])),
-        "intent": intent,
-        "tokens_used": 0,
-    }
+    # Meaningful fallback
+    fallback = FALLBACK_ANSWERS.get(intent, FALLBACK_ANSWERS["general"])
+    return {"response": fallback, "intent": intent, "tokens_used": 0}
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "ai-copilot"}
+    return {"status": "ok", "service": "ai-copilot", "llm_enabled": USE_OPENAI, "model": MODEL if USE_OPENAI else "fallback"}

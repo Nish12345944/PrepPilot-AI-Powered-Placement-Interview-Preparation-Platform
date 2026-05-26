@@ -1,0 +1,140 @@
+services:
+  # ── Backend ──────────────────────────────────────────────────
+  - type: web
+    name: preppilot-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: preppilot-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: preppilot-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AI_INTERVIEW_URL
+        fromService:
+          name: preppilot-ai-interview
+          type: web
+          property: host
+      - key: AI_LEARNING_URL
+        fromService:
+          name: preppilot-ai-learning
+          type: web
+          property: host
+      - key: AI_RESUME_URL
+        fromService:
+          name: preppilot-ai-resume
+          type: web
+          property: host
+      - key: AI_COPILOT_URL
+        fromService:
+          name: preppilot-ai-copilot
+          type: web
+          property: host
+      - key: FRONTEND_URL
+        fromService:
+          name: preppilot-frontend
+          type: web
+          property: host
+
+  # ── AI Interview ─────────────────────────────────────────────
+  - type: web
+    name: preppilot-ai-interview
+    runtime: python
+    rootDir: ai-services
+    buildCommand: pip install -r requirements.txt && apt-get update && apt-get install -y default-jdk g++ nodejs || true
+    startCommand: uvicorn interview.main:app --host 0.0.0.0 --port 8001
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: PORT
+        value: 8001
+
+  # ── AI Learning ──────────────────────────────────────────────
+  - type: web
+    name: preppilot-ai-learning
+    runtime: python
+    rootDir: ai-services
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn learning.main:app --host 0.0.0.0 --port 8002
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: PORT
+        value: 8002
+
+  # ── AI Resume ────────────────────────────────────────────────
+  - type: web
+    name: preppilot-ai-resume
+    runtime: python
+    rootDir: ai-services
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn resume.main:app --host 0.0.0.0 --port 8003
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: PORT
+        value: 8003
+
+  # ── AI Copilot ───────────────────────────────────────────────
+  - type: web
+    name: preppilot-ai-copilot
+    runtime: python
+    rootDir: ai-services
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn copilot.main:app --host 0.0.0.0 --port 8004
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: PORT
+        value: 8004
+
+  # ── Frontend ─────────────────────────────────────────────────
+  - type: web
+    name: preppilot-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: node .next/standalone/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: preppilot-backend
+          type: web
+          property: host
+      - key: PORT
+        value: 3000
+
+databases:
+  - name: preppilot-db
+    databaseName: preppilot_db
+    user: preppilot
+    plan: free
+
+  - name: preppilot-redis
+    plan: free
