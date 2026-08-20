@@ -288,10 +288,12 @@ CREATE TABLE user_badges (
 CREATE TABLE xp_transactions (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    amount      INTEGER NOT NULL,
+    amount      INTEGER NOT NULL CHECK (amount > 0),
     reason      VARCHAR(255) NOT NULL,
     reference_id UUID,              -- session_id, submission_id, etc.
-    created_at  TIMESTAMPTZ DEFAULT NOW()
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    -- Prevent duplicate XP rewards for the same action
+    UNIQUE (user_id, reason, reference_id)
 );
 
 CREATE TABLE leaderboard_snapshots (
@@ -380,6 +382,16 @@ CREATE INDEX idx_user_performance_user ON user_performance(user_id);
 CREATE INDEX idx_notifications_user_unread ON notifications(user_id) WHERE is_read = FALSE;
 CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
 CREATE INDEX idx_xp_transactions_user ON xp_transactions(user_id);
+CREATE INDEX idx_xp_transactions_user_date ON xp_transactions(user_id, created_at DESC);
+CREATE INDEX idx_resume_analyses_resume ON resume_analyses(resume_id);
+CREATE INDEX idx_learning_paths_user ON learning_paths(user_id);
+CREATE INDEX idx_plan_tasks_plan ON plan_tasks(plan_id);
+CREATE INDEX idx_daily_plans_user_date ON daily_plans(user_id, plan_date);
+CREATE INDEX idx_study_materials_user ON study_materials(user_id);
+CREATE INDEX idx_user_badges_user ON user_badges(user_id);
+CREATE INDEX idx_chat_sessions_user ON chat_sessions(user_id);
+CREATE INDEX idx_company_questions_company ON company_questions(company_id);
+CREATE INDEX idx_company_questions_question ON company_questions(question_id);
 
 -- Vector similarity search index
 CREATE INDEX idx_questions_embedding ON questions USING ivfflat (embedding vector_cosine_ops);

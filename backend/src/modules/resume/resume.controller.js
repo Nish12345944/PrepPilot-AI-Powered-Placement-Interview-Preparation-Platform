@@ -3,13 +3,20 @@ const axios = require('axios');
 const multer = require('multer');
 const path = require('path');
 
+const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx'];
+const ALLOWED_MIMES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
-    const allowed = ['.pdf', '.doc', '.docx'];
-    if (!allowed.includes(path.extname(file.originalname).toLowerCase())) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
       return cb(new Error('Only PDF, DOC, and DOCX files are allowed'));
+    }
+    // Validate MIME type as well (defense in depth)
+    if (file.mimetype && !ALLOWED_MIMES.includes(file.mimetype)) {
+      return cb(new Error('Invalid file type. Only PDF, DOC, and DOCX files are allowed.'));
     }
     cb(null, true);
   },
@@ -115,6 +122,20 @@ const handleUploadError = (err, req, res, next) => {
   next();
 };
 
+const getResumes = async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT id, file_url, is_active, uploaded_at,
+              (parsed_data->>'full_name') as full_name
+       FROM resumes WHERE user_id = $1 ORDER BY uploaded_at DESC`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 const getAnalyses = async (req, res) => {
   try {
     const { rows } = await query(
@@ -136,4 +157,4 @@ const getAnalyses = async (req, res) => {
   }
 };
 
-module.exports = { upload, handleUploadError, uploadResume, analyzeResume, getAnalyses };
+module.exports = { upload, handleUploadError, uploadResume, analyzeResume, getAnalyses, getResumes };

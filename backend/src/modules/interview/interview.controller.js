@@ -2,6 +2,7 @@ const { query } = require('../../config/db');
 const axios = require('axios');
 const redis = require('../../config/redis');
 const multer = require('multer');
+const { awardXP, evaluateBadgeAwards } = require('../gamification/gamification.controller');
 
 const AI_URL = () => process.env.AI_INTERVIEW_URL;
 const AI_TIMEOUT = 30000;
@@ -16,22 +17,6 @@ const audioUpload = multer({
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const awardXP = async (userId, amount, reason, referenceId) => {
-  try {
-    await query(
-      'INSERT INTO xp_transactions (user_id, amount, reason, reference_id) VALUES ($1, $2, $3, $4)',
-      [userId, amount, reason, referenceId]
-    );
-    await query(
-      `UPDATE user_profiles
-       SET total_xp = total_xp + $1,
-           level = GREATEST(1, (total_xp + $1) / 500 + 1)
-       WHERE user_id = $2`,
-      [amount, userId]
-    );
-  } catch (_) {}
-};
 
 const updateStreak = async (userId) => {
   try {
@@ -332,6 +317,8 @@ const completeSession = async (req, res) => {
     await updateTopicPerformance(userId, responses);
     await updateStreak(userId);
     await awardXP(userId, Math.round(avgScore / 5), 'interview_session_complete', session_id);
+    // Evaluate badge awards after completing session
+    await evaluateBadgeAwards(userId);
 
     res.json({ session: updated[0], feedback });
   } catch (err) {

@@ -7,6 +7,8 @@ import json
 import subprocess
 import tempfile
 import time
+import resource
+import shutil
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional, List
@@ -95,7 +97,6 @@ Candidate Answer: {req.user_answer[:2000]}"""
         )
         result = json.loads(response.choices[0].message.content)
         result["tokens_used"] = response.usage.total_tokens
-        # Ensure all required fields exist
         result.setdefault("score", 50)
         result.setdefault("is_correct", result.get("score", 0) >= 60)
         result.setdefault("accuracy", result.get("score", 50))
@@ -122,9 +123,24 @@ class HintRequest(BaseModel):
 LANG_CONFIG = {
     "python":     {"suffix": ".py",   "run": lambda f, _: ["python3", f]},
     "javascript": {"suffix": ".js",   "run": lambda f, _: ["node", f]},
-    "java":       {"suffix": ".java",  "run": None},  # special handling
-    "cpp":        {"suffix": ".cpp",   "run": None},  # special handling
+    "java":       {"suffix": ".java",  "run": None},
+    "cpp":        {"suffix": ".cpp",   "run": None},
 }
+
+# ── Security: resource limits for sandboxed execution ────────────────────────
+# Memory limit: 256 MB, CPU limit: 5 seconds, file size: 10 MB
+MEM_LIMIT = 256 * 1024 * 1024
+CPU_LIMIT = 5
+FILE_LIMIT = 10 * 1024 * 1024
+
+def _set_resource_limits():
+    """Apply resource limits to the child process (Unix only)."""
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))
+        resource.setrlimit(resource.RLIMIT_CPU, (CPU_LIMIT, CPU_LIMIT))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_LIMIT, FILE_LIMIT))
+    except (ValueError, resource.error):
+        pass
 
 def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> dict:
     cfg = LANG_CONFIG.get(language)
@@ -136,23 +152,22 @@ def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> 
         start = time.time()
 
         if language == "java":
-            # Extract public class name or default to Solution
             import re
             match = re.search(r'public\s+class\s+(\w+)', code)
             classname = match.group(1) if match else "Solution"
             src = os.path.join(tmpdir, f"{classname}.java")
             with open(src, "w") as f:
                 f.write(code)
-            # Compile
             compile_result = subprocess.run(
-                ["javac", src], capture_output=True, text=True, timeout=15
+                ["javac", src], capture_output=True, text=True, timeout=15,
+                preexec_fn=_set_resource_limits,
             )
             if compile_result.returncode != 0:
                 return {"output": "", "error": compile_result.stderr.strip(), "returncode": 1, "time_ms": 0, "compile_error": True}
-            # Run
             run_result = subprocess.run(
                 ["java", "-cp", tmpdir, classname],
-                input=str(stdin), capture_output=True, text=True, timeout=timeout
+                input=str(stdin), capture_output=True, text=True, timeout=timeout,
+                preexec_fn=_set_resource_limits,
             )
             elapsed = int((time.time() - start) * 1000)
             return {"output": run_result.stdout.strip(), "error": run_result.stderr.strip(), "returncode": run_result.returncode, "time_ms": elapsed}
@@ -163,12 +178,14 @@ def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> 
             with open(src, "w") as f:
                 f.write(code)
             compile_result = subprocess.run(
-                ["g++", "-O2", "-o", exe, src], capture_output=True, text=True, timeout=15
+                ["g++", "-O2", "-o", exe, src], capture_output=True, text=True, timeout=15,
+                preexec_fn=_set_resource_limits,
             )
             if compile_result.returncode != 0:
                 return {"output": "", "error": compile_result.stderr.strip(), "returncode": 1, "time_ms": 0, "compile_error": True}
             run_result = subprocess.run(
-                [exe], input=str(stdin), capture_output=True, text=True, timeout=timeout
+                [exe], input=str(stdin), capture_output=True, text=True, timeout=timeout,
+                preexec_fn=_set_resource_limits,
             )
             elapsed = int((time.time() - start) * 1000)
             return {"output": run_result.stdout.strip(), "error": run_result.stderr.strip(), "returncode": run_result.returncode, "time_ms": elapsed}
@@ -179,7 +196,8 @@ def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> 
                 f.write(code)
             run_result = subprocess.run(
                 cfg["run"](fname, None),
-                input=str(stdin), capture_output=True, text=True, timeout=timeout
+                input=str(stdin), capture_output=True, text=True, timeout=timeout,
+                preexec_fn=_set_resource_limits,
             )
             elapsed = int((time.time() - start) * 1000)
             return {"output": run_result.stdout.strip(), "error": run_result.stderr.strip(), "returncode": run_result.returncode, "time_ms": elapsed}
@@ -189,7 +207,6 @@ def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> 
     except Exception as e:
         return {"output": "", "error": str(e), "returncode": -1, "time_ms": 0}
     finally:
-        import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 @app.post("/judge")
@@ -202,7 +219,6 @@ async def judge_code(req: JudgeRequest):
     for i, tc in enumerate(req.test_cases):
         run = run_code_safely(req.code, req.language, str(tc.get("input", "")))
 
-        # Surface compile errors immediately on first case
         if run.get("compile_error") and i == 0:
             compile_error = run["error"]
             for tc2 in req.test_cases:
@@ -374,7 +390,6 @@ async def transcribe_audio(audio: UploadFile = File(...), language: str = Form(d
     if len(content) < 1000:
         raise HTTPException(400, "Audio file too small or empty")
 
-    # Write to temp file with correct extension
     ext = ".webm"
     if audio.content_type:
         if "mp4" in audio.content_type: ext = ".mp4"

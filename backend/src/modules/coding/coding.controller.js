@@ -1,5 +1,6 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
+const { awardXP, evaluateBadgeAwards } = require('../gamification/gamification.controller');
 
 // Get problems with adaptive difficulty
 const getProblems = async (req, res) => {
@@ -87,10 +88,8 @@ const submitCode = async (req, res) => {
   );
 
   if (judgeResult.status === 'accepted') {
-    await query(
-      `UPDATE user_profiles SET total_xp = total_xp + 20 WHERE user_id = $1`,
-      [userId]
-    );
+    await awardXP(userId, 20, 'coding_problem_solved', rows[0].id);
+    await evaluateBadgeAwards(userId);
   }
 
   res.json(rows[0]);
