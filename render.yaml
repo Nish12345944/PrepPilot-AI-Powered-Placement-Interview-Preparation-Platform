@@ -24,8 +24,6 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      - key: OPENAI_API_KEY
-        sync: false
       - key: AI_INTERVIEW_URL
         fromService:
           name: preppilot-ai-interview
@@ -60,10 +58,12 @@ services:
     buildCommand: pip install -r requirements.txt && apt-get update && apt-get install -y default-jdk g++ nodejs || true
     startCommand: uvicorn interview.main:app --host 0.0.0.0 --port 8001
     envVars:
-      - key: OPENAI_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: MODEL_NAME
-        value: gpt-4o-mini
+        value: gemini-2.5-flash-lite
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
       - key: PORT
         value: 8001
 
@@ -75,10 +75,12 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn learning.main:app --host 0.0.0.0 --port 8002
     envVars:
-      - key: OPENAI_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: MODEL_NAME
-        value: gpt-4o-mini
+        value: gemini-2.5-flash-lite
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
       - key: PORT
         value: 8002
 
@@ -90,10 +92,12 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn resume.main:app --host 0.0.0.0 --port 8003
     envVars:
-      - key: OPENAI_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: MODEL_NAME
-        value: gpt-4o-mini
+        value: gemini-2.5-flash-lite
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
       - key: PORT
         value: 8003
 
@@ -105,10 +109,12 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn copilot.main:app --host 0.0.0.0 --port 8004
     envVars:
-      - key: OPENAI_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: MODEL_NAME
-        value: gpt-4o-mini
+        value: gemini-2.5-flash-lite
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
       - key: PORT
         value: 8004
 

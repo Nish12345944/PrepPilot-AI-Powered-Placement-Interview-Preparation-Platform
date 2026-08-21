@@ -10,21 +10,19 @@ import io
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from openai import AsyncOpenAI, AuthenticationError, APIError
 from dotenv import load_dotenv
 
+from shared.gemini_client import generate_json, is_available
+
 load_dotenv()
+
+app = FastAPI(title="PrepPilot Resume AI", version="1.0.0")
 
 try:
     import PyPDF2
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-
-app = FastAPI(title="PrepPilot Resume AI", version="1.0.0")
-
-OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
-client = AsyncOpenAI(api_key=OPENAI_KEY) if OPENAI_KEY.startswith("sk-") else None
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
@@ -160,31 +158,19 @@ async def parse_resume(req: ParseRequest):
     if not raw_text.strip():
         raise HTTPException(400, "Could not extract text from resume. Ensure the PDF is not scanned/image-based.")
 
-    if client is None:
+    if not is_available():
         return {"raw_text": raw_text, "structured": basic_parse(raw_text)}
 
-    try:
-        response = await client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Parse this resume and extract structured data. "
-                        "Return JSON with: name, email, phone, skills (list of strings — include ALL technical skills, tools, languages, frameworks), "
-                        "experience (list of {company, role, duration, description}), "
-                        "education (list of {institution, degree, year}), "
-                        "projects (list of {name, description, tech_stack}), "
-                        "certifications (list), summary."
-                    ),
-                },
-                {"role": "user", "content": raw_text[:4000]},
-            ],
-            temperature=0.1,
-            response_format={"type": "json_object"},
-        )
-        structured = json.loads(response.choices[0].message.content)
-    except (AuthenticationError, APIError):
+    system = (
+        "Parse this resume and extract structured data. "
+        "Return JSON with: name, email, phone, skills (list of strings — include ALL technical skills, tools, languages, frameworks), "
+        "experience (list of {company, role, duration, description}), "
+        "education (list of {institution, degree, year}), "
+        "projects (list of {name, description, tech_stack}), "
+        "certifications (list), summary."
+    )
+    structured = await generate_json(system, raw_text[:4000], temperature=0.1)
+    if structured is None:
         structured = basic_parse(raw_text)
 
     return {"raw_text": raw_text, "structured": structured}
@@ -213,35 +199,22 @@ async def analyze_resume(req: AnalyzeRequest):
     if not req.resume_text or not req.resume_text.strip():
         raise HTTPException(400, "Resume text is empty. Please re-upload your resume.")
 
-    if client is None:
+    if not is_available():
         return basic_analyze(req.resume_text, req.job_description, req.parsed_data)
 
-    try:
-        response = await client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an ATS expert and career coach. Analyze the resume against the job description. "
-                        "Return JSON with: "
-                        "section_scores ({skills: 0-100, experience: 0-100, education: 0-100, projects: 0-100, summary: 0-100}), "
-                        "completeness_score (0-100, how complete and relevant the resume is for this JD), "
-                        "improvements (list of {section, issue, suggestion}), "
-                        "suggested_keywords (list of important missing keywords from the JD not in the resume), "
-                        "overall_fit (one of: poor/fair/good/excellent)."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"RESUME:\n{req.resume_text[:2500]}\n\nJOB DESCRIPTION:\n{req.job_description[:2000]}",
-                },
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"},
-        )
-        llm_analysis = json.loads(response.choices[0].message.content)
-    except (AuthenticationError, APIError):
+    system = (
+        "You are an ATS expert and career coach. Analyze the resume against the job description. "
+        "Return JSON with: "
+        "section_scores ({skills: 0-100, experience: 0-100, education: 0-100, projects: 0-100, summary: 0-100}), "
+        "completeness_score (0-100, how complete and relevant the resume is for this JD), "
+        "improvements (list of {section, issue, suggestion}), "
+        "suggested_keywords (list of important missing keywords from the JD not in the resume), "
+        "overall_fit (one of: poor/fair/good/excellent)."
+    )
+    prompt = f"RESUME:\n{req.resume_text[:2500]}\n\nJOB DESCRIPTION:\n{req.job_description[:2000]}"
+
+    llm_analysis = await generate_json(system, prompt, temperature=0.3)
+    if llm_analysis is None:
         return basic_analyze(req.resume_text, req.job_description, req.parsed_data)
 
     ats_score, keyword_matches = compute_ats_score(
@@ -269,4 +242,4 @@ async def analyze_resume(req: AnalyzeRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "ai-resume", "llm_enabled": client is not None}
+    return {"status": "ok", "service": "ai-resume", "llm_enabled": is_available()}

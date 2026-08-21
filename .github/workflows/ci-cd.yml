@@ -76,7 +76,7 @@ jobs:
         run: pytest tests/ -v
         working-directory: ai-services
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
   test-frontend:
     runs-on: ubuntu-latest

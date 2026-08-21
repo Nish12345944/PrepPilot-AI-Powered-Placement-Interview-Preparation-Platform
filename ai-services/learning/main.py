@@ -8,13 +8,15 @@ import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional, Any
-from openai import AsyncOpenAI
 from dotenv import load_dotenv
+
+from shared.gemini_client import generate_json, is_available
 
 load_dotenv()
 
+NL = chr(10)  # newline for building prompts
+
 app = FastAPI(title="PrepPilot Learning AI", version="1.0.0")
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ── Models ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,12 @@ def compute_priority_score(topic: dict) -> float:
     attempts = topic.get("attempts", 0) or 0
     return (1 - mastery / 100) * 0.6 + (1 / (attempts + 1)) * 0.4
 
+ROADMAP_FALLBACK = {
+    "roadmap": [],
+    "weekly_plan": [],
+    "tips": ["AI recommendations are temporarily unavailable. Focus on your weakest topics first."],
+}
+
 @app.post("/recommend")
 async def recommend_learning_path(req: RecommendRequest):
     # Sort topics by priority
@@ -61,20 +69,12 @@ async def recommend_learning_path(req: RecommendRequest):
         "strong_topics": [t["name"] for t in strong[:3]],
     }
 
-    response = await client.chat.completions.create(
-        model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a placement preparation expert. Create a personalized learning roadmap. Return JSON with: roadmap (ordered list of {topic, reason, estimated_days, resources}), weekly_plan (list of {week, focus_areas}), tips (list of strings).",
-            },
-            {"role": "user", "content": json.dumps(context)},
-        ],
-        temperature=0.4,
-        response_format={"type": "json_object"},
-    )
+    system = "You are a placement preparation expert. Create a personalized learning roadmap. Return JSON with: roadmap (ordered list of {topic, reason, estimated_days, resources}), weekly_plan (list of {week, focus_areas}), tips (list of strings)."
+    result = await generate_json(system, json.dumps(context), temperature=0.4)
 
-    result = json.loads(response.choices[0].message.content)
+    if result is None:
+        result = dict(ROADMAP_FALLBACK)
+
     result["priority_topics"] = [t["name"] for t in weak[:5]]
     return result
 
@@ -87,6 +87,13 @@ MATERIAL_PROMPTS = {
     "cheatsheet": "Create a concise cheatsheet with syntax, formulas, and quick-reference tables.",
 }
 
+MATERIAL_FALLBACK = {
+    "title": "Study Material Unavailable",
+    "content": "AI material generation is temporarily unavailable. Please try again later.",
+    "key_points": [],
+    "estimated_read_time_min": 1,
+}
+
 @app.post("/generate-material")
 async def generate_study_material(req: MaterialRequest):
     level_desc = "beginner" if req.user_level < 40 else "intermediate" if req.user_level < 75 else "advanced"
@@ -94,22 +101,20 @@ async def generate_study_material(req: MaterialRequest):
 
     prompt_instruction = MATERIAL_PROMPTS.get(req.material_type, MATERIAL_PROMPTS["notes"])
 
-    response = await client.chat.completions.create(
-        model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
-        messages=[
-            {
-                "role": "system",
-                "content": f"You are an expert educator. {prompt_instruction} The content should be {level_desc} level{company_ctx}. Return JSON with: title (string), content (markdown string), key_points (list), estimated_read_time_min (int).",
-            },
-            {"role": "user", "content": f"Topic: {req.topic['name']} (Category: {req.topic['category']})"},
-        ],
-        temperature=0.5,
-        response_format={"type": "json_object"},
-    )
+    system = f"You are an expert educator. {prompt_instruction} The content should be {level_desc} level{company_ctx}. Return JSON with: title (string), content (markdown string), key_points (list), estimated_read_time_min (int)."
+    prompt = f"Topic: {req.topic['name']} (Category: {req.topic['category']})"
 
-    return json.loads(response.choices[0].message.content)
+    result = await generate_json(system, prompt, temperature=0.5)
+    if result is None:
+        return dict(MATERIAL_FALLBACK)
+    return result
 
 # ── Daily Plan Generator ─────────────────────────────────────────────────────
+
+PLAN_FALLBACK = {
+    "tasks": [],
+    "motivation_message": "AI plan generation is temporarily unavailable. Review your weak topics today.",
+}
 
 @app.post("/generate-plan")
 async def generate_daily_plan(req: PlanRequest):
@@ -129,21 +134,13 @@ async def generate_daily_plan(req: PlanRequest):
         "task_count": task_count,
     }
 
-    response = await client.chat.completions.create(
-        model=os.getenv("MODEL_NAME", "gpt-4o-mini"),
-        messages=[
-            {
-                "role": "system",
-                "content": f"Create a daily study plan with exactly {task_count} tasks. Return JSON with: tasks (list of {{title, description, type (practice/revision/mock_interview/reading), topic_id (null), duration_min, priority}}), motivation_message (string).",
-            },
-            {"role": "user", "content": json.dumps(context)},
-        ],
-        temperature=0.4,
-        response_format={"type": "json_object"},
-    )
+    system = f"Create a daily study plan with exactly {task_count} tasks. Return JSON with: tasks (list of {{title, description, type (practice/revision/mock_interview/reading), topic_id (null), duration_min, priority}}), motivation_message (string)."
+    result = await generate_json(system, json.dumps(context), temperature=0.4)
 
-    return json.loads(response.choices[0].message.content)
+    if result is None:
+        return dict(PLAN_FALLBACK)
+    return result
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "ai-learning"}
+    return {"status": "ok", "service": "ai-learning", "llm_enabled": is_available()}

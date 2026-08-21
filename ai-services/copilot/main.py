@@ -5,29 +5,15 @@ Port: 8004
 import os
 import json
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from dotenv import load_dotenv
 
+from shared.gemini_client import generate_text, is_available, MODEL_NAME
+
 load_dotenv()
 
 app = FastAPI(title="PrepPilot Copilot AI", version="2.0.0")
-
-_api_key = os.getenv("OPENAI_API_KEY", "")
-USE_OPENAI = bool(_api_key) and _api_key.startswith("sk-") and _api_key not in ("sk-placeholder", "your_openai_key", "sk-...")
-
-if USE_OPENAI:
-    try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=_api_key)
-    except ImportError:
-        USE_OPENAI = False
-        client = None
-else:
-    client = None
-
-MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
@@ -101,15 +87,15 @@ def build_system_prompt(user_context: dict, intent: str) -> str:
 
     return system + intent_addons.get(intent, "")
 
-# ── Fallback answers (when no OpenAI key) ─────────────────────────────────────
+# ── Fallback answers (when no Gemini key) ─────────────────────────────────────
 
 FALLBACK_ANSWERS = {
     "explain_concept": """I can explain that concept for you!
 
-**Note:** The AI service is currently running without an OpenAI API key, so I'm providing a structured template response.
+**Note:** The AI service is currently running without a Gemini API key, so I'm providing a structured template response.
 
-To get full AI-powered answers like ChatGPT, please:
-1. Add your OpenAI API key to `ai-services/.env` as `OPENAI_API_KEY=sk-...`
+To get full AI-powered answers, please:
+1. Add your Gemini API key to `ai-services/.env` as `GEMINI_API_KEY=...`
 2. Restart the `ai-copilot` container
 
 **In the meantime**, here's how to approach learning any CS concept:
@@ -123,10 +109,10 @@ Try asking me again once the API key is configured for a complete answer!""",
 
     "general": """I'm PrepPilot Copilot — your AI career coach!
 
-**⚠️ OpenAI API key not configured.** To enable full ChatGPT-quality responses:
+**⚠️ Gemini API key not configured.** To enable full AI-quality responses:
 
 1. Open `ai-services/.env`
-2. Set `OPENAI_API_KEY=sk-your-key-here`
+2. Set `GEMINI_API_KEY=your-key-here`
 3. Run `docker compose restart ai-copilot`
 
 **I can help you with:**
@@ -155,25 +141,19 @@ async def chat(req: ChatRequest):
 
     messages.append({"role": "user", "content": req.message})
 
-    if USE_OPENAI and client:
-        try:
-            response = await client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                temperature=0.4,
-                max_tokens=2500,
-            )
+    if is_available():
+        result = await generate_text(system_prompt, messages, temperature=0.4)
+        if result is not None:
             return {
-                "response": response.choices[0].message.content,
+                "response": result["text"],
                 "intent": intent,
-                "tokens_used": response.usage.total_tokens,
+                "tokens_used": result["tokens_used"],
             }
-        except Exception as e:
-            return {
-                "response": f"AI service error: {str(e)}\n\nPlease check your OpenAI API key and try again.",
-                "intent": intent,
-                "tokens_used": 0,
-            }
+        return {
+            "response": "AI service error: Gemini is temporarily unavailable. Please try again shortly.",
+            "intent": intent,
+            "tokens_used": 0,
+        }
 
     # Meaningful fallback
     fallback = FALLBACK_ANSWERS.get(intent, FALLBACK_ANSWERS["general"])
@@ -181,4 +161,4 @@ async def chat(req: ChatRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "ai-copilot", "llm_enabled": USE_OPENAI, "model": MODEL if USE_OPENAI else "fallback"}
+    return {"status": "ok", "service": "ai-copilot", "llm_enabled": is_available(), "model": MODEL_NAME if is_available() else "fallback"}
