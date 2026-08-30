@@ -51,11 +51,17 @@ const getDashboard = async (req, res) => {
     [userId]
   );
 
+  const sessionsCompleted = await query(
+    `SELECT COUNT(*) as count FROM interview_sessions
+     WHERE user_id = $1 AND status = 'completed'`,
+    [userId]
+  );
+
   res.json({
     profile: profile.rows[0],
     stats: {
       problems_solved: parseInt(totalSolved.rows[0]?.count || 0),
-      sessions_completed: recentSessions.rows.filter((s) => s.status === 'completed').length,
+      sessions_completed: parseInt(sessionsCompleted.rows[0]?.count || 0),
     },
     recent_sessions: recentSessions.rows,
     topic_performance: topicPerf.rows,

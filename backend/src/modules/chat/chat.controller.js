@@ -1,15 +1,25 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
 
+const AI_TIMEOUT = 30000;
+
 // Send message to AI Copilot
 const sendMessage = async (req, res) => {
   const { session_id, message } = req.body;
   const userId = req.user.id;
 
+  if (!message?.trim()) return res.status(400).json({ error: 'Message cannot be empty' });
+
   let chatSessionId = session_id;
 
-  // Create new session if not provided
-  if (!chatSessionId) {
+  if (chatSessionId) {
+    // Re-using a session — it MUST belong to the current user.
+    const { rows: owned } = await query(
+      'SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2',
+      [chatSessionId, userId]
+    );
+    if (!owned[0]) return res.status(404).json({ error: 'Chat session not found' });
+  } else {
     const { rows } = await query(
       `INSERT INTO chat_sessions (user_id, title) VALUES ($1, $2) RETURNING id`,
       [userId, message.substring(0, 50)]
@@ -38,14 +48,21 @@ const sendMessage = async (req, res) => {
   );
 
   // Call AI Copilot service
-  const { data: aiResponse } = await axios.post(
-    `${process.env.AI_COPILOT_URL}/chat`,
-    {
-      message,
-      history: history.reverse(),
-      user_context: userCtx[0],
-    }
-  );
+  let aiResponse;
+  try {
+    const { data } = await axios.post(
+      `${process.env.AI_COPILOT_URL}/chat`,
+      {
+        message,
+        history: history.reverse(),
+        user_context: userCtx[0],
+      },
+      { timeout: AI_TIMEOUT }
+    );
+    aiResponse = data;
+  } catch (err) {
+    return res.status(502).json({ error: 'AI service is temporarily unavailable. Please try again.' });
+  }
 
   // Save AI response
   const { rows: savedMsg } = await query(
@@ -73,6 +90,13 @@ const getSessions = async (req, res) => {
 
 const getMessages = async (req, res) => {
   const { session_id } = req.params;
+  // Only allow reading messages of sessions owned by the current user.
+  const { rows: owned } = await query(
+    'SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2',
+    [session_id, req.user.id]
+  );
+  if (!owned[0]) return res.status(404).json({ error: 'Chat session not found' });
+
   const { rows } = await query(
     `SELECT * FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC`,
     [session_id]

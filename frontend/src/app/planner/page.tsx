@@ -44,33 +44,31 @@ export default function PlannerPage() {
     try {
       const { data } = await api.post('/planner/generate');
       setPlan(data.plan);
-      setTasks(data.tasks);
-      toast.success('Daily plan generated!');
-    } catch {
-      toast.error('Failed to generate plan');
+      setTasks(data.tasks || []);
+      toast.success(data.already_existed ? "Today's plan already exists" : 'Daily plan generated!');
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to generate plan');
     } finally {
       setGenerating(false);
     }
   };
 
-  const toggleTask = async (task: any) => {
-    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+  const setTaskStatus = async (task: any, newStatus: 'pending' | 'completed' | 'skipped') => {
     try {
       const { data } = await api.patch(`/planner/tasks/${task.id}`, { status: newStatus });
-      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, ...data } : t));
-      setPlan((prev: any) => prev ? {
-        ...prev,
-        completed_tasks: tasks.filter((t) => t.id === task.id
-          ? newStatus === 'completed'
-          : t.status === 'completed').length,
-      } : prev);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...data } : t)));
     } catch {
       toast.error('Failed to update task');
     }
   };
 
+  const toggleTask = (task: any) => {
+    setTaskStatus(task, task.status === 'completed' ? 'pending' : 'completed');
+  };
+
   const completed = tasks.filter((t) => t.status === 'completed').length;
-  const progress  = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
+  const activeTasks = tasks.filter((t) => t.status !== 'skipped').length;
+  const progress  = activeTasks ? Math.round((completed / activeTasks) * 100) : 100;
   const today     = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   if (loading) return (
@@ -113,7 +111,7 @@ export default function PlannerPage() {
           <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <span className="text-white font-medium">Today's Progress</span>
-              <span className="text-slate-400 text-sm">{completed}/{tasks.length} tasks</span>
+              <span className="text-slate-400 text-sm">{completed}/{activeTasks} tasks</span>
             </div>
             <div className="w-full h-3 bg-slate-700 rounded-full overflow-hidden">
               <div
@@ -130,33 +128,62 @@ export default function PlannerPage() {
               const Icon = TASK_ICONS[task.task_type] || BookOpen;
               const colorClass = TASK_COLORS[task.task_type] || 'text-slate-400 bg-slate-500/10 border-slate-500/20';
               const done = task.status === 'completed';
+              const skipped = task.status === 'skipped';
               return (
                 <div
                   key={task.id}
                   onClick={() => toggleTask(task)}
-                  className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
-                    done ? 'bg-slate-800/30 border-slate-700/50 opacity-60' : 'bg-slate-800/60 border-slate-700 hover:border-slate-600'
+                  role="checkbox"
+                  aria-checked={done}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      toggleTask(task);
+                    }
+                  }}
+                  className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all focus-visible:ring-2 focus-visible:ring-indigo-400 outline-none ${
+                    done
+                      ? 'bg-slate-800/30 border-slate-700/50 opacity-60'
+                      : skipped
+                      ? 'bg-slate-800/20 border-slate-800 opacity-50'
+                      : 'bg-slate-800/60 border-slate-700 hover:border-slate-600'
                   }`}
                 >
                   {done
                     ? <CheckCircle size={22} className="text-green-400 shrink-0 mt-0.5" />
                     : <Circle size={22} className="text-slate-500 shrink-0 mt-0.5" />}
                   <div className="flex-1 min-w-0">
-                    <p className={`font-medium text-sm ${done ? 'line-through text-slate-500' : 'text-white'}`}>
+                    <p className={`font-medium text-sm ${done || skipped ? 'line-through text-slate-500' : 'text-white'}`}>
                       {task.title}
                     </p>
                     {task.description && (
                       <p className="text-slate-400 text-xs mt-0.5 line-clamp-2">{task.description}</p>
                     )}
-                    <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
                       <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${colorClass}`}>
                         <Icon size={11} /> {task.task_type?.replace('_', ' ')}
                       </span>
                       <span className="flex items-center gap-1 text-slate-500 text-xs">
                         <Clock size={11} /> {task.duration_min} min
                       </span>
+                      {skipped && (
+                        <span className="text-slate-500 text-xs italic">skipped</span>
+                      )}
                     </div>
                   </div>
+                  {!done && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTaskStatus(task, skipped ? 'pending' : 'skipped');
+                      }}
+                      aria-label={skipped ? `Mark "${task.title}" as pending` : `Skip "${task.title}"`}
+                      className="shrink-0 text-xs text-slate-500 hover:text-slate-300 px-2 py-1 rounded-lg hover:bg-white/5 transition-colors focus-visible:ring-2 focus-visible:ring-indigo-400 outline-none"
+                    >
+                      {skipped ? 'Undo' : 'Skip'}
+                    </button>
+                  )}
                 </div>
               );
             })}

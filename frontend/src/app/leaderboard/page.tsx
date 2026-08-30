@@ -39,6 +39,10 @@ export default function LeaderboardPage() {
   }, [period]);
 
   const myRank = rows.find((r) => r.full_name === user?.full_name);
+  const safeXp = (v: any) => {
+    const n = parseInt(v);
+    return Number.isFinite(n) ? n.toLocaleString() : '0';
+  };
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -72,7 +76,7 @@ export default function LeaderboardPage() {
           <div className="flex items-center gap-3">
             <span className="text-white font-bold">#{myRank.rank}</span>
             <span className="flex items-center gap-1 text-yellow-400 text-sm font-semibold">
-              <Zap size={14} /> {parseInt(myRank.xp).toLocaleString()} XP
+              <Zap size={14} /> {safeXp(myRank.xp)} XP
             </span>
           </div>
         </div>
@@ -100,7 +104,7 @@ export default function LeaderboardPage() {
                   {actualRank === 1 ? '🥇' : actualRank === 2 ? '🥈' : '🥉'} #{actualRank}
                 </p>
                 <p className="text-slate-400 text-xs mt-1 flex items-center gap-0.5">
-                  <Zap size={10} className="text-yellow-400" />{parseInt(r.xp).toLocaleString()}
+                  <Zap size={10} className="text-yellow-400" />{safeXp(r.xp)}
                 </p>
               </div>
             );
@@ -143,7 +147,7 @@ export default function LeaderboardPage() {
                 </p>
               </div>
               <div className="flex items-center gap-1 text-yellow-400 font-semibold text-sm shrink-0">
-                <Zap size={14} /> {parseInt(r.xp).toLocaleString()} XP
+                <Zap size={14} /> {safeXp(r.xp)} XP
               </div>
             </div>
           ))

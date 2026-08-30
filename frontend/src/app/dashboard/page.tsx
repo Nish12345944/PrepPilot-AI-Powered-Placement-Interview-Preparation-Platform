@@ -47,8 +47,34 @@ export default function DashboardPage() {
   const { user } = useAuthStore();
   const router   = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState(false);
 
-  useEffect(() => { api.get('/dashboard').then((r) => setData(r.data)); }, []);
+  useEffect(() => {
+    // Redirect unauthenticated users (e.g. after token expiry)
+    if (!user && !localStorage.getItem('accessToken')) {
+      router.replace('/auth/login');
+      return;
+    }
+    api.get('/dashboard')
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
+  }, [router, user]);
+
+  if (error) {
+    return (
+      <div className="max-w-6xl mx-auto flex flex-col items-center justify-center py-24 gap-3">
+        <TrendingUp size={36} className="text-slate-600" />
+        <p className="text-slate-300 font-semibold">Couldn't load your dashboard</p>
+        <p className="text-slate-500 text-sm">Please check your connection and try again.</p>
+        <button
+          onClick={() => { setError(false); api.get('/dashboard').then((r) => setData(r.data)).catch(() => setError(true)); }}
+          className="btn-primary mt-3 text-sm"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (!data) return <DashboardSkeleton />;
 
@@ -64,8 +90,11 @@ export default function DashboardPage() {
 
   const level      = data.profile?.level ?? 1;
   const xp         = data.profile?.total_xp ?? 0;
-  const xpToNext   = level * 500;
-  const xpProgress = Math.min(100, Math.round((xp % xpToNext) / xpToNext * 100));
+  // Backend level formula: level = FLOOR(total_xp / 500) + 1
+  const xpPerLevel = 500;
+  const xpInLevel  = Math.max(0, xp - (level - 1) * xpPerLevel);
+  const xpToNext   = Math.max(0, xpPerLevel - xpInLevel);
+  const xpProgress = Math.min(100, Math.round((xpInLevel / xpPerLevel) * 100));
   const streak     = data.profile?.current_streak ?? 0;
   const solved     = data.stats?.problems_solved ?? 0;
   const sessions   = data.stats?.sessions_completed ?? 0;
@@ -120,7 +149,7 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-1">
               <p className="text-white font-bold text-xl">{xp.toLocaleString()} <span className="text-indigo-400 text-sm font-normal">XP</span></p>
-              <p className="text-slate-400 text-xs">{xpToNext - (xp % xpToNext)} XP to Level {level + 1}</p>
+              <p className="text-slate-400 text-xs">{xpToNext} XP to Level {level + 1}</p>
               <div className="w-32 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(99,102,241,0.15)' }}>
                 <div className="h-full rounded-full" style={{ width: `${xpProgress}%`, background: 'linear-gradient(90deg, #6366f1, #8b5cf6)' }} />
               </div>

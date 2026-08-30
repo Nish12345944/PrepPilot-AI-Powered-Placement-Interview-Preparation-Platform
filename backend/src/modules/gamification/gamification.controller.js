@@ -96,9 +96,11 @@ const evaluateBadgeAwards = async (userId) => {
     }
 
     if (newlyAwarded.length) {
-      await awardXP(userId, newlyAwarded.length * 50, 'badge_earned');
-      // Send notification for each new badge
+      // Award XP per badge with a stable reference so the UNIQUE(reason, reference_id)
+      // constraint protects against duplicate rewards under concurrent evaluation.
       for (const badge of newlyAwarded) {
+        await awardXP(userId, 50, 'badge_earned', `badge:${badge.id}`);
+        // Send notification for each new badge
         await query(
           `INSERT INTO notifications (user_id, title, body, type, metadata)
            VALUES ($1, 'New Badge Earned!', $2, 'achievement', $3)`,

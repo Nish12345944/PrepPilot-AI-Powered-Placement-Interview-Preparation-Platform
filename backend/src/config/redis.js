@@ -40,18 +40,33 @@ const connect = async () => {
 
 const get = async (key) => {
   if (!redisAvailable || !client) return null;
-  const val = await client.get(key);
-  return val ? JSON.parse(val) : null;
+  try {
+    const val = await client.get(key);
+    return val ? JSON.parse(val) : null;
+  } catch (err) {
+    logger.warn(`Redis get failed for ${key.split(':')[0]}:`, err.message);
+    return null;
+  }
 };
 
 const set = async (key, value, ttlSeconds = 3600) => {
   if (!redisAvailable || !client) return null;
-  return client.setEx(key, ttlSeconds, JSON.stringify(value));
+  try {
+    return client.setEx(key, ttlSeconds, JSON.stringify(value));
+  } catch (err) {
+    logger.warn('Redis set failed:', err.message);
+    return null;
+  }
 };
 
 const del = async (key) => {
   if (!redisAvailable || !client) return null;
-  return client.del(key);
+  try {
+    return client.del(key);
+  } catch (err) {
+    logger.warn('Redis del failed:', err.message);
+    return null;
+  }
 };
 
 module.exports = { connect, get, set, del, client };

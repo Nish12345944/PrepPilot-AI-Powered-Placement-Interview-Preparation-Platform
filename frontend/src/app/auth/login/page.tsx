@@ -1,14 +1,20 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
-import { Zap, Mail, Lock, ArrowRight } from 'lucide-react';
+import { Zap, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
-  const { login, isLoading } = useAuthStore();
+  const [showPassword, setShowPassword] = useState(false);
+  const { login, isLoading, user } = useAuthStore();
   const router = useRouter();
+
+  // Already signed in? Go straight to the dashboard.
+  useEffect(() => {
+    if (user && localStorage.getItem('accessToken')) router.replace('/dashboard');
+  }, [user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,7 +22,11 @@ export default function LoginPage() {
       await login(form.email, form.password);
       router.push('/dashboard');
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Login failed');
+      const msg =
+        err.response?.status === 401
+          ? 'Invalid email or password.'
+          : err.response?.data?.error || 'Login failed. Please try again.';
+      toast.error(msg);
     }
   };
 
@@ -49,10 +59,11 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-indigo-300 mb-2 uppercase tracking-wider">Email</label>
+              <label htmlFor="login-email" className="block text-xs font-medium text-indigo-300 mb-2 uppercase tracking-wider">Email</label>
               <div className="relative">
-                <Mail size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Mail size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                 <input
+                  id="login-email"
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -65,27 +76,38 @@ export default function LoginPage() {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-xs font-medium text-indigo-300 uppercase tracking-wider">Password</label>
+                <label htmlFor="login-password" className="text-xs font-medium text-indigo-300 uppercase tracking-wider">Password</label>
                 <a href="/auth/forgot-password" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                   Forgot password?
                 </a>
               </div>
               <div className="relative">
-                <Lock size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Lock size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                 <input
-                  type="password"
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="input-field pl-11"
+                  className="input-field pl-11 pr-11"
                   placeholder="••••••••"
+                  autoComplete="current-password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
+              aria-busy={isLoading}
               className="btn-primary w-full py-3 flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
             >
               {isLoading ? 'Signing in...' : <><span>Sign In</span><ArrowRight size={16} /></>}

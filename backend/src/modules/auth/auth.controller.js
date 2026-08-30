@@ -5,11 +5,16 @@ const nodemailer = require('nodemailer');
 const { query } = require('../../config/db');
 const redis = require('../../config/redis');
 
-const mailer = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-});
+// Build a mailer only if SMTP is configured; otherwise gracefully skip sending
+// (reset requests still return the generic success message to avoid enumeration).
+const mailer = process.env.SMTP_HOST
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: Number(process.env.SMTP_PORT) === 465,
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+    })
+  : null;
 
 const generateTokens = (userId) => {
   const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET, {
@@ -163,14 +168,27 @@ const forgotPassword = async (req, res) => {
 
   const resetUrl = `${process.env.FRONTEND_URL}/auth/reset-password?token=${token}&id=${rows[0].id}`;
 
-  await mailer.sendMail({
-    from: process.env.EMAIL_FROM,
-    to: email,
-    subject: 'PrepPilot – Reset your password',
-    html: `<p>Click the link below to reset your password. It expires in 1 hour.</p>
-           <a href="${resetUrl}">${resetUrl}</a>
-           <p>If you didn't request this, ignore this email.</p>`,
-  });
+  // Best-effort email — always return the generic message so we don't leak
+  // account existence or crash if SMTP is down.
+  if (mailer) {
+    try {
+      await mailer.sendMail({
+        from: process.env.EMAIL_FROM,
+        to: email,
+        subject: 'PrepPilot – Reset your password',
+        html: `<p>Click the link below to reset your password. It expires in 1 hour.</p>
+               <a href="${resetUrl}">${resetUrl}</a>
+               <p>If you didn't request this, ignore this email.</p>`,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Password reset email failed:', err.message);
+    }
+  } else {
+    // SMTP is not configured — surface a log line for operators.
+    // eslint-disable-next-line no-console
+    console.warn(`SMTP not configured; password reset link for user ${rows[0].id}: ${resetUrl}`);
+  }
 
   res.json({ message: 'If that email exists, a reset link has been sent.' });
 };

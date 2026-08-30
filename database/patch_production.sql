@@ -4,9 +4,16 @@
 -- ============================================================
 
 -- XP transactions: prevent duplicate reward abuse
-ALTER TABLE xp_transactions
-  ADD CONSTRAINT xp_transactions_unique_reward
-  UNIQUE (user_id, reason, reference_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'xp_transactions_unique_reward'
+  ) THEN
+    ALTER TABLE xp_transactions
+      ADD CONSTRAINT xp_transactions_unique_reward
+      UNIQUE (user_id, reason, reference_id);
+  END IF;
+END $$;
 
 -- Additional indexes for query performance
 CREATE INDEX IF NOT EXISTS idx_xp_transactions_user_date

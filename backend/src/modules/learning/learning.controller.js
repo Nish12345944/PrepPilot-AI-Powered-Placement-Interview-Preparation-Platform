@@ -1,6 +1,8 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
 
+const AI_TIMEOUT = 30000;
+
 // Get AI-generated learning path for user
 const getLearningPath = async (req, res) => {
   const userId = req.user.id;
@@ -20,10 +22,17 @@ const getLearningPath = async (req, res) => {
   );
 
   // Call adaptive learning AI service
-  const { data: recommendation } = await axios.post(
-    `${process.env.AI_LEARNING_URL}/recommend`,
-    { user_id: userId, performance, user_info: userInfo[0] }
-  );
+  let recommendation;
+  try {
+    const { data } = await axios.post(
+      `${process.env.AI_LEARNING_URL}/recommend`,
+      { user_id: userId, performance, user_info: userInfo[0] },
+      { timeout: AI_TIMEOUT }
+    );
+    recommendation = data;
+  } catch (err) {
+    return res.status(502).json({ error: 'AI learning service is temporarily unavailable. Please try again.' });
+  }
 
   // Upsert learning path
   const { rows: pathRows } = await query(
@@ -79,15 +88,22 @@ const generateStudyMaterial = async (req, res) => {
     [userId, topic_id]
   );
 
-  const { data: material } = await axios.post(
-    `${process.env.AI_LEARNING_URL}/generate-material`,
-    {
-      topic: topic[0],
-      material_type,
-      company_target,
-      user_level: userPerf[0]?.mastery_score || 50,
-    }
-  );
+  let material;
+  try {
+    const { data } = await axios.post(
+      `${process.env.AI_LEARNING_URL}/generate-material`,
+      {
+        topic: topic[0],
+        material_type,
+        company_target,
+        user_level: userPerf[0]?.mastery_score || 50,
+      },
+      { timeout: AI_TIMEOUT }
+    );
+    material = data;
+  } catch (err) {
+    return res.status(502).json({ error: 'AI material generation is temporarily unavailable. Please try again.' });
+  }
 
   const { rows } = await query(
     `INSERT INTO study_materials (user_id, topic_id, title, content, material_type, company_target)

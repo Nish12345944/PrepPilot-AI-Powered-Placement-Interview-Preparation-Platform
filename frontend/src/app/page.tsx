@@ -4,11 +4,13 @@ import Link from 'next/link';
 export const metadata: Metadata = {
   title: 'PrepPilot – AI-Powered Placement Preparation',
   description:
-    'Ace your campus placements with AI mock interviews, adaptive learning, coding practice, and ATS resume analysis.',
+    'Ace your campus placements with Gemini-powered mock interviews, adaptive learning, coding practice, daily planning, and ATS resume analysis.',
+  keywords: ['placement preparation', 'mock interview', 'AI interview practice', 'ATS resume checker', 'DSA practice', 'campus placement'],
   openGraph: {
     title: 'PrepPilot – AI-Powered Placement Preparation',
-    description: 'Ace your campus placements with AI mock interviews, adaptive learning, and more.',
+    description: 'Ace your campus placements with AI mock interviews, adaptive learning, coding practice, and ATS resume analysis.',
     type: 'website',
+    siteName: 'PrepPilot',
   },
 };
 
@@ -16,7 +18,7 @@ const features = [
   {
     icon: '🎙️',
     title: 'AI Mock Interviews',
-    desc: 'Practice technical, HR, and aptitude rounds with GPT-4o-mini evaluation — get scored on accuracy, clarity, and structure.',
+    desc: 'Practice technical, HR, and aptitude rounds with Gemini AI evaluation — get scored on accuracy, clarity, and structure.',
   },
   {
     icon: '💻',
@@ -45,7 +47,7 @@ const features = [
   },
 ];
 
-const companies = ['Amazon', 'Google', 'Microsoft', 'TCS', 'Infosys', 'Wipro'];
+const companies = ['Think41', 'Deloitte', 'EPAM Systems', 'EXL Service', 'Amazon', 'Microsoft'];
 
 export default function LandingPage() {
   return (
@@ -135,7 +137,7 @@ export default function LandingPage() {
       {/* CTA */}
       <section className="text-center px-6 py-20 border-t border-white/10">
         <h2 className="text-3xl font-bold mb-4">Ready to start?</h2>
-        <p className="text-white/50 mb-8">Join thousands of students preparing smarter with AI.</p>
+        <p className="text-white/50 mb-8">Create a free account and start preparing smarter with AI.</p>
         <Link
           href="/auth/register"
           className="inline-block px-10 py-4 bg-purple-600 hover:bg-purple-700 rounded-xl font-bold text-lg transition-colors"

@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const { Server } = require('socket.io');
 const http = require('http');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 
 const db = require('./config/db');
 const redis = require('./config/redis');
@@ -33,22 +34,42 @@ const profileRoutes = require('./modules/profile/profile.routes');
 const app = express();
 const server = http.createServer(app);
 
+// CORS allowlist — FRONTEND_URL may be a comma-separated list. When unset we
+// reflect the request origin so local/docker development keeps working, but in
+// production FRONTEND_URL should always be an explicit allowlist.
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const corsOrigin = allowedOrigins.length ? allowedOrigins : true;
+
 // Socket.IO for real-time notifications
 const io = new Server(server, {
-  cors: { origin: process.env.FRONTEND_URL, credentials: true },
+  cors: { origin: corsOrigin, credentials: true },
 });
 
 setIO(io);
 
 io.on('connection', (socket) => {
-  socket.on('join', (userId) => socket.join(`user:${userId}`));
+  // Require a valid JWT so clients can only join their own notification room.
+  // The two-arg form below is equivalent to socket.handshake.auth.token.
+  const token = socket.handshake?.auth?.token || socket.handshake?.query?.token;
+  try {
+    const decoded = jwt.verify(token || '', process.env.JWT_SECRET);
+    socket.data.userId = decoded.userId;
+    socket.join(`user:${decoded.userId}`);
+  } catch (_) {
+    // Unauthenticated sockets may connect but cannot join any room.
+    socket.data.userId = null;
+  }
 });
 
 app.set('io', io);
 
 // Security middleware
-app.use(helmet());
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(cors({ origin: corsOrigin, credentials: true }));
 // Request logging with timing
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
@@ -178,9 +199,12 @@ const start = async () => {
   server.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
 };
 
-start().catch((err) => {
-  logger.error('Failed to start server', err);
-  process.exit(1);
-});
+// Only listen when run directly (not when required by tests/imports).
+if (require.main === module) {
+  start().catch((err) => {
+    logger.error('Failed to start server', err);
+    process.exit(1);
+  });
+}
 
 module.exports = { app, server };

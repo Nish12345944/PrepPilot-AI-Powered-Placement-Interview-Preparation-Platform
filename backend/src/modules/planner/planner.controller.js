@@ -1,17 +1,26 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
 
+const AI_TIMEOUT = 30000;
+
 // Auto-generate daily plan using AI
 const generateDailyPlan = async (req, res) => {
   const userId = req.user.id;
   const today = new Date().toISOString().split('T')[0];
 
-  // Check if plan already exists
+  // Check if plan already exists — return the full plan WITH its tasks so the
+  // client never ends up with a plan but no task list.
   const { rows: existing } = await query(
     'SELECT * FROM daily_plans WHERE user_id = $1 AND plan_date = $2',
     [userId, today]
   );
-  if (existing[0]) return res.json(existing[0]);
+  if (existing[0]) {
+    const { rows: existingTasks } = await query(
+      'SELECT * FROM plan_tasks WHERE plan_id = $1 ORDER BY order_index',
+      [existing[0].id]
+    );
+    return res.json({ plan: existing[0], tasks: existingTasks, already_existed: true });
+  }
 
   // Get user context for AI
   const { rows: perf } = await query(
@@ -33,15 +42,26 @@ const generateDailyPlan = async (req, res) => {
     [userId, new Date(Date.now() - 86400000).toISOString().split('T')[0]]
   );
 
-  const { data: plan } = await axios.post(
-    `${process.env.AI_LEARNING_URL}/generate-plan`,
-    {
-      user_id: userId,
-      weak_topics: perf,
-      user_info: userInfo[0],
-      yesterday_completion: yesterday[0],
-    }
-  );
+  let plan;
+  try {
+    const { data } = await axios.post(
+      `${process.env.AI_LEARNING_URL}/generate-plan`,
+      {
+        user_id: userId,
+        weak_topics: perf,
+        user_info: userInfo[0],
+        yesterday_completion: yesterday[0],
+      },
+      { timeout: AI_TIMEOUT }
+    );
+    plan = data;
+  } catch (err) {
+    return res.status(502).json({ error: 'AI plan generation is unavailable. Please try again.' });
+  }
+
+  if (!plan || !Array.isArray(plan.tasks) || plan.tasks.length === 0) {
+    return res.status(502).json({ error: 'AI plan generation returned no tasks. Please try again.' });
+  }
 
   const { rows: planRow } = await query(
     `INSERT INTO daily_plans (user_id, plan_date, total_tasks)
@@ -87,6 +107,20 @@ const getTodayPlan = async (req, res) => {
 const updateTaskStatus = async (req, res) => {
   const { task_id } = req.params;
   const { status } = req.body;
+
+  const allowed = ['pending', 'completed', 'skipped', 'rescheduled'];
+  if (!allowed.includes(status)) {
+    return res.status(400).json({ error: 'Invalid task status' });
+  }
+
+  // Verify the task belongs to a plan owned by the current user.
+  const { rows: owned } = await query(
+    `SELECT pt.id FROM plan_tasks pt
+     JOIN daily_plans dp ON dp.id = pt.plan_id
+     WHERE pt.id = $1 AND dp.user_id = $2`,
+    [task_id, req.user.id]
+  );
+  if (!owned[0]) return res.status(404).json({ error: 'Task not found' });
 
   const { rows } = await query(
     `UPDATE plan_tasks SET status = $1, completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE NULL END

@@ -76,7 +76,7 @@ export default function InterviewSessionPage() {
         setFinalFeedback(data.session.ai_feedback || {});
         setPhase('review');
       } else {
-        toast.error('Session data not found. Please start a new session.');
+        toast.error('This session could not be resumed. Start a new interview to continue.');
         router.push('/interview');
       }
     } catch {

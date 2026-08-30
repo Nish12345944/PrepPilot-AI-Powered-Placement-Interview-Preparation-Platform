@@ -2,6 +2,17 @@ const { query } = require('../../config/db');
 const axios = require('axios');
 const { awardXP, evaluateBadgeAwards } = require('../gamification/gamification.controller');
 
+const AI_TIMEOUT = 30000;
+
+// `pg` returns JSONB/JSON columns as strings; normalise them before returning.
+const parseJson = (value, fallback) => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch (_) { return fallback; }
+  }
+  return value;
+};
+
 // Get problems with adaptive difficulty
 const getProblems = async (req, res) => {
   const { topic, difficulty, company, page = 1, limit = 20 } = req.query;
@@ -37,7 +48,10 @@ const getProblems = async (req, res) => {
 
 const getProblemById = async (req, res) => {
   const { rows } = await query(
-    `SELECT q.*, cp.starter_code, cp.test_cases, cp.constraints, cp.examples,
+    `SELECT q.id, q.title, q.description, q.type, q.difficulty, q.company_tags,
+            q.role_tags, q.options, q.time_limit_sec, q.xp_reward, q.hints,
+            q.topic_id, q.created_at,
+            cp.starter_code, cp.test_cases, cp.constraints, cp.examples,
             cp.time_complexity, cp.space_complexity, t.name as topic_name
      FROM questions q
      JOIN coding_problems cp ON cp.question_id = q.id
@@ -48,8 +62,16 @@ const getProblemById = async (req, res) => {
 
   if (!rows[0]) return res.status(404).json({ error: 'Problem not found' });
 
-  // Hide hidden test cases
-  const problem = rows[0];
+  const problem = {
+    ...rows[0],
+    starter_code: parseJson(rows[0].starter_code, {}),
+    test_cases: parseJson(rows[0].test_cases, []),
+    constraints: parseJson(rows[0].constraints, null),
+    examples: parseJson(rows[0].examples, []),
+    options: parseJson(rows[0].options, []),
+  };
+
+  // Hide hidden test cases from the client
   problem.test_cases = problem.test_cases.filter((tc) => !tc.is_hidden);
   res.json(problem);
 };
@@ -59,6 +81,10 @@ const submitCode = async (req, res) => {
   const { problem_id, language, code } = req.body;
   const userId = req.user.id;
 
+  if (!problem_id || !language || !code?.trim()) {
+    return res.status(400).json({ error: 'problem_id, language and code are required' });
+  }
+
   // Get test cases (including hidden) — problem_id is questions.id from frontend
   const { rows: problems } = await query(
     'SELECT cp.id as cp_id, cp.test_cases FROM coding_problems cp WHERE cp.question_id = $1',
@@ -67,11 +93,24 @@ const submitCode = async (req, res) => {
 
   if (!problems[0]) return res.status(404).json({ error: 'Problem not found' });
 
-  // Call AI service for code execution + analysis
-  const { data: judgeResult } = await axios.post(
-    `${process.env.AI_INTERVIEW_URL}/judge`,
-    { code, language, test_cases: problems[0].test_cases }
-  );
+  let judgeResult;
+  try {
+    const { data } = await axios.post(
+      `${process.env.AI_INTERVIEW_URL}/judge`,
+      { code, language, test_cases: parseJson(problems[0].test_cases, []) },
+      { timeout: AI_TIMEOUT }
+    );
+    judgeResult = data;
+  } catch (err) {
+    return res.status(err.response?.status === 400 ? 400 : 502).json({
+      error: 'Code execution service unavailable. Please try again.',
+    });
+  }
+
+  const testResults = parseJson(judgeResult.test_results, []);
+  const aiFeedback = parseJson(judgeResult.ai_feedback, null);
+  const passed = testResults.filter((t) => t.passed).length;
+  const total = testResults.length;
 
   const cpId = problems[0].cp_id;
 
@@ -81,9 +120,9 @@ const submitCode = async (req, res) => {
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
     [
       userId, cpId, language, code,
-      judgeResult.status, JSON.stringify(judgeResult.test_results),
+      judgeResult.status, JSON.stringify(testResults),
       judgeResult.runtime_ms, judgeResult.memory_kb,
-      JSON.stringify(judgeResult.ai_feedback)
+      JSON.stringify(aiFeedback),
     ]
   );
 
@@ -92,7 +131,14 @@ const submitCode = async (req, res) => {
     await evaluateBadgeAwards(userId);
   }
 
-  res.json(rows[0]);
+  res.json({
+    ...rows[0],
+    test_results: testResults,
+    ai_feedback: aiFeedback,
+    passed,
+    total,
+    compile_error: judgeResult.compile_error || null,
+  });
 };
 
 const getSubmissions = async (req, res) => {
@@ -124,7 +170,7 @@ const getHint = async (req, res) => {
     error: error || null,
     wrong_cases: wrong_cases || [],
     hint_level: hint_level || 1,
-  });
+  }, { timeout: AI_TIMEOUT });
   res.json(data);
 };
 

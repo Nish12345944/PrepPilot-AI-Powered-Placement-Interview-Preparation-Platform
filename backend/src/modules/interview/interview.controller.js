@@ -135,11 +135,21 @@ const startSession = async (req, res) => {
     const { session_type, company_target, is_strict_mode, question_count = 10 } = req.body;
     const userId = req.user.id;
 
+    // Validate session_type & question_count
+    const validTypes = ['technical', 'hr', 'aptitude', 'coding', 'system_design'];
+    if (!validTypes.includes(session_type)) {
+      return res.status(400).json({ error: 'Invalid session type' });
+    }
+    const qCount = parseInt(question_count, 10);
+    if (!Number.isFinite(qCount) || qCount < 1 || qCount > 50) {
+      return res.status(400).json({ error: 'question_count must be between 1 and 50' });
+    }
+
     // Map session_type to question type
-    const typeMap = { technical: 'subjective', hr: 'behavioral', aptitude: 'mcq', coding: 'coding' };
+    const typeMap = { technical: 'subjective', hr: 'behavioral', aptitude: 'mcq', coding: 'coding', system_design: 'subjective' };
     const qType = typeMap[session_type] || 'subjective';
 
-    const cacheKey = `questions:${session_type}:${company_target || 'general'}:${question_count}`;
+    const cacheKey = `questions:${session_type}:${company_target || 'general'}:${qCount}`;
     let questions = await redis.get(cacheKey);
 
     if (!questions) {
@@ -155,7 +165,7 @@ const startSession = async (req, res) => {
       }
 
       queryText += ` ORDER BY RANDOM() LIMIT $${params.length + 1}`;
-      params.push(parseInt(question_count));
+      params.push(qCount);
 
       const { rows } = await query(queryText, params);
       questions = rows;
@@ -163,7 +173,7 @@ const startSession = async (req, res) => {
       // Use fallback questions if DB has none
       if (!questions.length) {
         const pool = FALLBACK_QUESTIONS[session_type] || FALLBACK_QUESTIONS.technical;
-        questions = pool.slice(0, parseInt(question_count));
+        questions = pool.slice(0, qCount);
       }
 
       if (questions.length) await redis.set(cacheKey, questions, 300);
@@ -190,6 +200,16 @@ const submitResponse = async (req, res) => {
     const { question_id, user_answer, time_taken_sec, session_type } = req.body;
 
     if (!user_answer?.trim()) return res.status(400).json({ error: 'Answer cannot be empty' });
+
+    // Verify the session belongs to the current user before recording a response.
+    const { rows: sessionRows } = await query(
+      'SELECT id, status FROM interview_sessions WHERE id = $1 AND user_id = $2',
+      [session_id, req.user.id]
+    );
+    if (!sessionRows[0]) return res.status(404).json({ error: 'Session not found' });
+    if (sessionRows[0].status === 'completed') {
+      return res.status(400).json({ error: 'Session already completed' });
+    }
 
     // Fetch question details for AI context
     const { rows: qRows } = await query(
@@ -283,7 +303,7 @@ const completeSession = async (req, res) => {
       const { data } = await axios.post(
         `${AI_URL()}/session-feedback`,
         {
-          responses: allResponses.map((r) => ({
+          responses: responses.map((r) => ({
             title: r.title || 'Question',
             score: r.score,
             feedback: typeof r.ai_evaluation === 'string'

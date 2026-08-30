@@ -15,6 +15,7 @@ frontend/.env.local
 
 # Build outputs
 .next/
+*.tsbuildinfo
 dist/
 build/
 

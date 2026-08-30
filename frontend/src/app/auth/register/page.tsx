@@ -1,9 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
-import { Zap, User, Mail, Lock, Building2, Briefcase, GraduationCap, ArrowRight } from 'lucide-react';
+import { Zap, User, Mail, Lock, Building2, Briefcase, GraduationCap, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 const COMPANIES = ['Amazon', 'Google', 'Microsoft', 'TCS', 'Infosys', 'Wipro', 'Other'];
 
@@ -12,11 +12,30 @@ export default function RegisterPage() {
     email: '', password: '', full_name: '',
     target_company: '', target_role: '', college: '', graduation_year: '',
   });
-  const { register, isLoading } = useAuthStore();
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const { register, isLoading, user } = useAuthStore();
   const router = useRouter();
+
+  // Already signed in? Go straight to the dashboard.
+  useEffect(() => {
+    if (user && localStorage.getItem('accessToken')) router.replace('/dashboard');
+  }, [user, router]);
+
+  const validate = () => {
+    const errors: Record<string, string> = {};
+    if (form.password.length < 8) errors.password = 'Password must be at least 8 characters.';
+    if (form.graduation_year) {
+      const y = Number(form.graduation_year);
+      if (!Number.isInteger(y) || y < 2000 || y > 2100) errors.graduation_year = 'Enter a valid graduation year.';
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
     try {
       await register({
         email: form.email, password: form.password, full_name: form.full_name,
@@ -25,9 +44,15 @@ export default function RegisterPage() {
         college: form.college || undefined,
         graduation_year: form.graduation_year ? Number(form.graduation_year) : undefined,
       });
+      toast.success('Account created — welcome to PrepPilot!');
       router.push('/dashboard');
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Registration failed');
+      const status = err.response?.status;
+      if (status === 409 || /exist|duplicate/i.test(err.response?.data?.error || '')) {
+        toast.error('An account with this email already exists. Try logging in instead.');
+      } else {
+        toast.error(err.response?.data?.error || 'Registration failed. Please try again.');
+      }
     }
   };
 
@@ -74,12 +99,34 @@ export default function RegisterPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-indigo-300 mb-2 uppercase tracking-wider">Password</label>
+                <label htmlFor="reg-password" className="block text-xs font-medium text-indigo-300 mb-2 uppercase tracking-wider">Password</label>
                 <div className="relative">
-                  <Lock size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    className="input-field pl-11" placeholder="Min 8 characters" required />
+                  <Lock size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                  <input
+                    id="reg-password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="input-field pl-11 pr-11"
+                    placeholder="Min 8 characters"
+                    autoComplete="new-password"
+                    minLength={8}
+                    required
+                    aria-invalid={!!fieldErrors.password}
+                    aria-describedby={fieldErrors.password ? 'reg-password-error' : undefined}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
+                {fieldErrors.password && (
+                  <p id="reg-password-error" role="alert" className="text-red-400 text-xs mt-1.5">{fieldErrors.password}</p>
+                )}
               </div>
             </div>
 

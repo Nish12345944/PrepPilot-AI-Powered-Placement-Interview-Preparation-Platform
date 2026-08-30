@@ -16,20 +16,26 @@ PrepPilot is a production-grade, end-to-end placement preparation platform that 
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS, Zustand, Monaco Editor, Recharts, Socket.IO Client.
-- **Backend**: Node.js, Express, PostgreSQL, Redis, Socket.IO Server, rate limiters, security sandboxing.
+- **Frontend**: Next.js 15, React, TypeScript, Tailwind CSS, Zustand, Monaco Editor, Recharts, Socket.IO Client.
+- **Backend**: Node.js, Express, PostgreSQL (pgvector), Redis, Socket.IO Server, rate limiters, Joi validation, security sandboxing.
 - **AI Microservices**: FastAPI, Google Gemini (Gemini 2.5 Flash-Lite for LLM, Gemini Embedding 001 for embeddings) via the official `google-genai` SDK, Python-docx, PyPDF2, scikit-learn.
 - **Infrastructure**: Nginx, Docker Compose, Render Configs, GitHub Actions.
 
 ## API Overview
 
-- **Auth**: `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/forgot-password`, `/api/auth/reset-password`.
-- **Profiles**: `/api/profile/` (GET/PUT).
-- **Interviews**: `/api/interview/start`, `/api/interview/:session_id/submit`, `/api/interview/:session_id/complete`, `/api/interview/companies`.
-- **Coding**: `/api/coding/problems`, `/api/coding/problems/:id`, `/api/coding/submit`, `/api/coding/hint`.
-- **Resumes**: `/api/resume/upload` (Multer + MIME-secured), `/api/resume/analyze`.
-- **Gamification**: `/api/gamification/achievements`.
-- **Notifications**: `/api/notifications/`, `/api/notifications/unread-count`, `/api/notifications/:id/read`.
+All routes are under `/api` on the backend service. Authenticated routes require a `Bearer` access token.
+
+- **Auth**: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/forgot-password`, `POST /auth/reset-password`.
+- **Profiles**: `GET|PUT /profile`.
+- **Interviews**: `POST /interview/sessions`, `GET /interview/sessions`, `GET /interview/sessions/:id`, `POST /interview/sessions/:id/respond`, `POST /interview/sessions/:id/complete`, `POST /interview/transcribe` (multipart audio). `GET /interview/companies` and `GET /interview/questions` are public.
+- **Coding**: `GET /coding/problems`, `GET /coding/problems/:id`, `POST /coding/submit`, `POST /coding/hint`, `GET /coding/problems/:problem_id/submissions`.
+- **Learning**: `GET /learning/path`, `GET /learning/next`, `GET /learning/materials`, `POST /learning/materials/generate`.
+- **Planner**: `POST /planner/generate`, `GET /planner/today`, `PATCH /planner/tasks/:task_id`.
+- **Dashboard**: `GET /dashboard`, `GET /dashboard/leaderboard?period=weekly|monthly|all_time`.
+- **Chat / Copilot**: `POST /chat/message`, `GET /chat/sessions`, `GET /chat/sessions/:session_id/messages`.
+- **Resumes**: `POST /resume/upload` (Multer + MIME-secured), `POST /resume/analyze`, `GET /resume/analyses`, `GET /resume`.
+- **Gamification**: `GET /gamification/achievements`.
+- **Notifications**: `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`.
 
 ## AI Provider — Google Gemini
 

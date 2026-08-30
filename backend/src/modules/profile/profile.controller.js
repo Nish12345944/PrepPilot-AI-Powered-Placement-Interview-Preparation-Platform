@@ -1,5 +1,4 @@
 const { query } = require('../../config/db');
-const { validationResult } = require('express-validator');
 
 // Get current user profile
 const getProfile = async (req, res) => {
@@ -27,29 +26,31 @@ const getProfile = async (req, res) => {
 // Update profile
 const updateProfile = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ error: 'Validation failed', details: errors.array() });
-    }
-
     const {
       full_name, avatar_url, target_company, target_role,
       experience_level, college, graduation_year,
       bio, linkedin_url, github_url, skills,
     } = req.body;
 
+    // Coerce optional values: empty strings -> NULL, ensure arrays are clean
+    const clean = (v, isArray = false) => {
+      if (v === undefined) return undefined;
+      if (isArray) return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : undefined;
+      return typeof v === 'string' && v.trim() === '' ? null : v;
+    };
+
     // Update users table
     const userUpdates = [];
     const userParams = [req.user.id];
     let paramIdx = 2;
 
-    if (full_name !== undefined) { userUpdates.push(`full_name = $${paramIdx++}`); userParams.push(full_name); }
-    if (avatar_url !== undefined) { userUpdates.push(`avatar_url = $${paramIdx++}`); userParams.push(avatar_url); }
-    if (target_company !== undefined) { userUpdates.push(`target_company = $${paramIdx++}`); userParams.push(target_company); }
-    if (target_role !== undefined) { userUpdates.push(`target_role = $${paramIdx++}`); userParams.push(target_role); }
-    if (experience_level !== undefined) { userUpdates.push(`experience_level = $${paramIdx++}`); userParams.push(experience_level); }
-    if (college !== undefined) { userUpdates.push(`college = $${paramIdx++}`); userParams.push(college); }
-    if (graduation_year !== undefined) { userUpdates.push(`graduation_year = $${paramIdx++}`); userParams.push(graduation_year); }
+    if (full_name !== undefined) { userUpdates.push(`full_name = $${paramIdx++}`); userParams.push(clean(full_name)); }
+    if (avatar_url !== undefined) { userUpdates.push(`avatar_url = $${paramIdx++}`); userParams.push(clean(avatar_url)); }
+    if (target_company !== undefined) { userUpdates.push(`target_company = $${paramIdx++}`); userParams.push(clean(target_company)); }
+    if (target_role !== undefined) { userUpdates.push(`target_role = $${paramIdx++}`); userParams.push(clean(target_role)); }
+    if (experience_level !== undefined) { userUpdates.push(`experience_level = $${paramIdx++}`); userParams.push(clean(experience_level)); }
+    if (college !== undefined) { userUpdates.push(`college = $${paramIdx++}`); userParams.push(clean(college)); }
+    if (graduation_year !== undefined) { userUpdates.push(`graduation_year = $${paramIdx++}`); userParams.push(clean(graduation_year)); }
 
     if (userUpdates.length) {
       userParams.push(req.user.id);
@@ -64,10 +65,10 @@ const updateProfile = async (req, res) => {
     const profileParams = [req.user.id];
     let pIdx = 2;
 
-    if (bio !== undefined) { profileUpdates.push(`bio = $${pIdx++}`); profileParams.push(bio); }
-    if (linkedin_url !== undefined) { profileUpdates.push(`linkedin_url = $${pIdx++}`); profileParams.push(linkedin_url); }
-    if (github_url !== undefined) { profileUpdates.push(`github_url = $${pIdx++}`); profileParams.push(github_url); }
-    if (skills !== undefined) { profileUpdates.push(`skills = $${pIdx++}`); profileParams.push(skills); }
+    if (bio !== undefined) { profileUpdates.push(`bio = $${pIdx++}`); profileParams.push(clean(bio)); }
+    if (linkedin_url !== undefined) { profileUpdates.push(`linkedin_url = $${pIdx++}`); profileParams.push(clean(linkedin_url)); }
+    if (github_url !== undefined) { profileUpdates.push(`github_url = $${pIdx++}`); profileParams.push(clean(github_url)); }
+    if (skills !== undefined) { profileUpdates.push(`skills = $${pIdx++}`); profileParams.push(clean(skills, true)); }
 
     if (profileUpdates.length) {
       const colNames = profileUpdates.map((u) => u.split(' = ')[0]);
