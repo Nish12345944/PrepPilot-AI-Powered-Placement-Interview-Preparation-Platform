@@ -64,7 +64,7 @@ export default function DashboardPage() {
     return (
       <div className="max-w-6xl mx-auto flex flex-col items-center justify-center py-24 gap-3">
         <TrendingUp size={36} className="text-slate-600" />
-        <p className="text-slate-300 font-semibold">Couldn't load your dashboard</p>
+        <p className="text-slate-300 font-semibold">Couldn&apos;t load your dashboard</p>
         <p className="text-slate-500 text-sm">Please check your connection and try again.</p>
         <button
           onClick={() => { setError(false); api.get('/dashboard').then((r) => setData(r.data)).catch(() => setError(true)); }}

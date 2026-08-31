@@ -1,6 +1,7 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
 const { awardXP, evaluateBadgeAwards } = require('../gamification/gamification.controller');
+const { aiUrl } = require('../../utils/aiUrl');
 
 const AI_TIMEOUT = 30000;
 
@@ -96,7 +97,7 @@ const submitCode = async (req, res) => {
   let judgeResult;
   try {
     const { data } = await axios.post(
-      `${process.env.AI_INTERVIEW_URL}/judge`,
+      `${aiUrl('AI_INTERVIEW_URL')}/judge`,
       { code, language, test_cases: parseJson(problems[0].test_cases, []) },
       { timeout: AI_TIMEOUT }
     );
@@ -163,7 +164,7 @@ const getHint = async (req, res) => {
   );
   if (!rows[0]) return res.status(404).json({ error: 'Problem not found' });
 
-  const { data } = await axios.post(`${process.env.AI_INTERVIEW_URL}/hint`, {
+  const { data } = await axios.post(`${aiUrl('AI_INTERVIEW_URL')}/hint`, {
     code, language,
     problem_title: rows[0].title,
     problem_description: rows[0].description,

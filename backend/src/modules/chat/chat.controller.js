@@ -1,5 +1,6 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
+const { aiUrl } = require('../../utils/aiUrl');
 
 const AI_TIMEOUT = 30000;
 
@@ -51,7 +52,7 @@ const sendMessage = async (req, res) => {
   let aiResponse;
   try {
     const { data } = await axios.post(
-      `${process.env.AI_COPILOT_URL}/chat`,
+      `${aiUrl('AI_COPILOT_URL')}/chat`,
       {
         message,
         history: history.reverse(),

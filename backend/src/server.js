@@ -34,12 +34,16 @@ const profileRoutes = require('./modules/profile/profile.routes');
 const app = express();
 const server = http.createServer(app);
 
-// CORS allowlist — FRONTEND_URL may be a comma-separated list. When unset we
-// reflect the request origin so local/docker development keeps working, but in
-// production FRONTEND_URL should always be an explicit allowlist.
+const { normalizeUrl } = require('./utils/aiUrl');
+
+// CORS allowlist — FRONTEND_URL may be a comma-separated list of full URLs or
+// bare hostnames (Render `fromService host`). Entries are normalized to full
+// origins. When unset we reflect the request origin so local/docker
+// development keeps working, but in production FRONTEND_URL should always be
+// an explicit allowlist.
 const allowedOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
-  .map((s) => s.trim())
+  .map((s) => normalizeUrl(s.trim()))
   .filter(Boolean);
 
 const corsOrigin = allowedOrigins.length ? allowedOrigins : true;
@@ -89,9 +93,27 @@ app.use((req, res, next) => {
 // Rate limiting
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
+// Expensive AI-backed operations get their own tighter budget so a single
+// account can't burn Gemini quota (or judge CPU) with rapid-fire requests.
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: { error: 'Too many AI requests. Please slow down and try again shortly.' },
+});
 app.use('/api/', limiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+[
+  '/api/chat',
+  '/api/coding/submit',
+  '/api/coding/hint',
+  '/api/resume/analyze',
+  '/api/resume/upload',
+  '/api/planner/generate',
+  '/api/learning/materials/generate',
+  '/api/interview/sessions',
+  '/api/interview/transcribe',
+].forEach((p) => app.use(p, aiLimiter));
 
 // Routes
 app.use('/api/auth', authRoutes);

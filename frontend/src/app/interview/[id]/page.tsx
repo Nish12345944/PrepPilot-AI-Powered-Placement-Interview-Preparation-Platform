@@ -65,6 +65,7 @@ export default function InterviewSessionPage() {
     }
     // No questions in storage — fetch session (review mode for completed)
     fetchSessionForReview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   const fetchSessionForReview = async () => {
@@ -214,7 +215,7 @@ export default function InterviewSessionPage() {
     return () => {
       cleanupMedia();
     };
-  }, [mediaRecorder, mediaStream]);
+  }, [mediaRecorder, mediaStream]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Timer
   useEffect(() => {
@@ -237,6 +238,7 @@ export default function InterviewSessionPage() {
     }, 1000);
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, currentIdx, recording]);
 
   const submitAnswer = useCallback(async (ans: string) => {

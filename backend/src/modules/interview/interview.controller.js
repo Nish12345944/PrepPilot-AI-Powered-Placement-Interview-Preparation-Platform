@@ -3,8 +3,9 @@ const axios = require('axios');
 const redis = require('../../config/redis');
 const multer = require('multer');
 const { awardXP, evaluateBadgeAwards } = require('../gamification/gamification.controller');
+const { aiUrl } = require('../../utils/aiUrl');
 
-const AI_URL = () => process.env.AI_INTERVIEW_URL;
+const AI_URL = () => aiUrl('AI_INTERVIEW_URL');
 const AI_TIMEOUT = 30000;
 
 const audioUpload = multer({

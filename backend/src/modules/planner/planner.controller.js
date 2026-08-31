@@ -1,5 +1,6 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
+const { aiUrl } = require('../../utils/aiUrl');
 
 const AI_TIMEOUT = 30000;
 
@@ -45,7 +46,7 @@ const generateDailyPlan = async (req, res) => {
   let plan;
   try {
     const { data } = await axios.post(
-      `${process.env.AI_LEARNING_URL}/generate-plan`,
+      `${aiUrl('AI_LEARNING_URL')}/generate-plan`,
       {
         user_id: userId,
         weak_topics: perf,

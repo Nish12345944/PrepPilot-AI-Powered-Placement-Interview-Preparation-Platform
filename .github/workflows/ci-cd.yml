@@ -96,14 +96,17 @@ jobs:
       - name: Lint
         run: npm run lint
         working-directory: frontend
-        continue-on-error: true  # lint warnings shouldn't hard-fail build
+
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: frontend
 
       - name: Build
         run: npm run build
         working-directory: frontend
         env:
-          NEXT_PUBLIC_API_URL: http://localhost:5000/api
-          NEXT_PUBLIC_WS_URL: http://localhost:5000
+          NEXT_PUBLIC_API_URL: https://api.preppilot.example.com/api
+          NEXT_PUBLIC_WS_URL: https://api.preppilot.example.com
 
   docker-build:
     needs: [test-backend, test-ai, test-frontend]

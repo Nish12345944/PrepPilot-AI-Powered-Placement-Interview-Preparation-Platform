@@ -3,9 +3,23 @@ WORKDIR /app
 
 # System deps: gcc/g++ for C++, JDK for Java, Node for JS, libpq for psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libpq-dev default-jdk nodejs && rm -rf /var/lib/apt/lists/*
+    gcc g++ libpq-dev default-jdk nodejs curl && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Non-root execution. User code submitted to the judge runs under the same
+# account but is constrained by RLIMIT_* set in interview/main.py; never run
+# this image with extra capabilities or host mounts.
+RUN addgroup --system app && adduser --system --ingroup app app \
+    && mkdir -p /tmp/judge && chown -R app:app /app /tmp/judge
+USER app
+
+# Default service port (overridden per-service by compose/Render).
+EXPOSE 8000 8001 8002 8003 8004
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:${PORT:-8000}/health || exit 1
+

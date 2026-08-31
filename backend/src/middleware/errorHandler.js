@@ -3,7 +3,13 @@ const logger = require('../utils/logger');
 // eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, next) => {
   const reqId = req.id || 'unknown';
-  logger.error(`${err.message} [${reqId}]`, { stack: err.stack, path: req.path, method: req.method });
+  const userId = req.user?.id || 'anonymous';
+  logger.error(`${err.message} [${reqId}]`, {
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    userId,
+  });
 
   // Validation errors
   if (err.name === 'ValidationError') {

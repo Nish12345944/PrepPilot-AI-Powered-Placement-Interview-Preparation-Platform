@@ -1,5 +1,6 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
+const { aiUrl } = require('../../utils/aiUrl');
 
 const AI_TIMEOUT = 30000;
 
@@ -25,7 +26,7 @@ const getLearningPath = async (req, res) => {
   let recommendation;
   try {
     const { data } = await axios.post(
-      `${process.env.AI_LEARNING_URL}/recommend`,
+      `${aiUrl('AI_LEARNING_URL')}/recommend`,
       { user_id: userId, performance, user_info: userInfo[0] },
       { timeout: AI_TIMEOUT }
     );
@@ -91,7 +92,7 @@ const generateStudyMaterial = async (req, res) => {
   let material;
   try {
     const { data } = await axios.post(
-      `${process.env.AI_LEARNING_URL}/generate-material`,
+      `${aiUrl('AI_LEARNING_URL')}/generate-material`,
       {
         topic: topic[0],
         material_type,

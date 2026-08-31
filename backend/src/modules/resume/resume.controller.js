@@ -2,6 +2,7 @@ const { query } = require('../../config/db');
 const axios = require('axios');
 const multer = require('multer');
 const path = require('path');
+const { aiUrl } = require('../../utils/aiUrl');
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx'];
 const ALLOWED_MIMES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
@@ -31,7 +32,7 @@ const uploadResume = async (req, res) => {
     let parsed;
     try {
       const { data } = await axios.post(
-        `${process.env.AI_RESUME_URL}/parse`,
+        `${aiUrl('AI_RESUME_URL')}/parse`,
         { file_content: req.file.buffer.toString('base64'), file_type: req.file.mimetype },
         { timeout: 30000 }
       );
@@ -85,7 +86,7 @@ const analyzeResume = async (req, res) => {
     let analysis;
     try {
       const { data } = await axios.post(
-        `${process.env.AI_RESUME_URL}/analyze`,
+        `${aiUrl('AI_RESUME_URL')}/analyze`,
         { resume_text: resumes[0].raw_text, job_description, parsed_data: parsedData },
         { timeout: 30000 }
       );

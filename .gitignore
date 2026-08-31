@@ -46,3 +46,6 @@ nginx/certs/
 
 # Stray directory from earlier mkdir -p error
 -p/
+
+# Stray lint output from interactive `next lint` runs
+lint_log.txt

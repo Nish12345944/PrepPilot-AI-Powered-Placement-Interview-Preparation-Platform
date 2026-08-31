@@ -103,14 +103,14 @@ export default function PlannerPage() {
         <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-12 text-center space-y-4">
           <Sparkles size={40} className="text-purple-400 mx-auto" />
           <p className="text-white font-semibold text-lg">No plan for today yet</p>
-          <p className="text-slate-400 text-sm">Click "Generate Plan" to get an AI-personalized study schedule based on your weak topics and goals.</p>
+          <p className="text-slate-400 text-sm">Click &quot;Generate Plan&quot; to get an AI-personalized study schedule based on your weak topics and goals.</p>
         </div>
       ) : (
         <>
           {/* Progress bar */}
           <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-white font-medium">Today's Progress</span>
+              <span className="text-white font-medium">Today&apos;s Progress</span>
               <span className="text-slate-400 text-sm">{completed}/{activeTasks} tasks</span>
             </div>
             <div className="w-full h-3 bg-slate-700 rounded-full overflow-hidden">

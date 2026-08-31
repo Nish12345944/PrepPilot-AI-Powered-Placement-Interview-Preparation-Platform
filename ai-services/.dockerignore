@@ -1,0 +1,14 @@
+# Secrets — never bake into images
+.env
+.env.*
+!.env.example
+
+# Dev artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+.coverage
+htmlcov/
+.venv/
+venv/

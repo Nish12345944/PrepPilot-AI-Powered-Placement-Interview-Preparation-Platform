@@ -4,7 +4,7 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-preppilot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:-preppilot_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -14,10 +14,11 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U preppilot -d preppilot_db"]
+      test: ["CMD-SHELL", "pg_isready -U preppilot"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -31,13 +32,17 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   # ── Backend ─────────────────────────────────────────────────
   backend:
     build: ./backend
-    env_file: ./backend/.env
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
-      DATABASE_URL: postgresql://preppilot:preppilot_dev_pass@postgres:5432/preppilot_db
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-preppilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-preppilot_db}
       REDIS_URL: redis://redis:6379
       AI_INTERVIEW_URL: http://ai-interview:8001
       AI_LEARNING_URL: http://ai-learning:8002
@@ -56,12 +61,18 @@ services:
     restart: unless-stopped
 
   # ── AI Services ─────────────────────────────────────────────
+  # Each service is the same image with a different module/port. The
+  # GEMINI_API_KEY comes from ai-services/.env (or the shell environment).
   ai-interview:
     build:
       context: ./ai-services
       dockerfile: Dockerfile.base
     command: uvicorn interview.main:app --host 0.0.0.0 --port 8001
-    env_file: ./ai-services/.env
+    env_file:
+      - path: ./ai-services/.env
+        required: false
+    environment:
+      PORT: 8001
     ports:
       - "8001:8001"
     restart: unless-stopped
@@ -71,7 +82,11 @@ services:
       context: ./ai-services
       dockerfile: Dockerfile.base
     command: uvicorn learning.main:app --host 0.0.0.0 --port 8002
-    env_file: ./ai-services/.env
+    env_file:
+      - path: ./ai-services/.env
+        required: false
+    environment:
+      PORT: 8002
     ports:
       - "8002:8002"
     restart: unless-stopped
@@ -81,7 +96,11 @@ services:
       context: ./ai-services
       dockerfile: Dockerfile.base
     command: uvicorn resume.main:app --host 0.0.0.0 --port 8003
-    env_file: ./ai-services/.env
+    env_file:
+      - path: ./ai-services/.env
+        required: false
+    environment:
+      PORT: 8003
     ports:
       - "8003:8003"
     restart: unless-stopped
@@ -91,32 +110,38 @@ services:
       context: ./ai-services
       dockerfile: Dockerfile.base
     command: uvicorn copilot.main:app --host 0.0.0.0 --port 8004
-    env_file: ./ai-services/.env
+    env_file:
+      - path: ./ai-services/.env
+        required: false
+    environment:
+      PORT: 8004
     ports:
       - "8004:8004"
     restart: unless-stopped
 
   # ── Frontend ─────────────────────────────────────────────────
+  # NEXT_PUBLIC_* values are inlined at BUILD time — pass them as build args.
   frontend:
-    build: ./frontend
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
-      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-http://localhost:5000}
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
     depends_on:
       - backend
     ports:
       - "3000:3000"
     restart: unless-stopped
 
-  # ── Nginx ────────────────────────────────────────────────────
+  # ── Nginx (optional reverse proxy) ───────────────────────────
+  # Serves plain HTTP by default so `docker compose up` works from a clean
+  # checkout. Enable the HTTPS server block in nginx/nginx.conf once you have
+  # mounted certificates under ./nginx/certs.
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - frontend
       - backend

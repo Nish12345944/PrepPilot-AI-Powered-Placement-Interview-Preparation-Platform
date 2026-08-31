@@ -133,26 +133,69 @@ LANG_CONFIG = {
     "cpp":        {"suffix": ".cpp",   "run": None},
 }
 
-def _sandbox_kwargs():
-    """preexec_fn is Unix-only; omit it elsewhere."""
-    return {"preexec_fn": _set_resource_limits} if resource is not None else {}
-
-# ── Security: resource limits for sandboxed execution ────────────────────────
-# Memory limit: 256 MB, CPU limit: 5 seconds, file size: 10 MB
+# Run limits: 256 MB memory, 5 s CPU, 10 MB files, 64 processes
+# Compile limits are looser (compilers legitimately need more CPU/memory).
 MEM_LIMIT = 256 * 1024 * 1024
 CPU_LIMIT = 5
 FILE_LIMIT = 10 * 1024 * 1024
+NPROC_LIMIT = 64
 
-def _set_resource_limits():
+COMPILE_MEM_LIMIT = 1024 * 1024 * 1024
+COMPILE_CPU_LIMIT = 30
+COMPILE_NPROC_LIMIT = 256
+
+# Hard caps on judge requests (abuse protection)
+MAX_CODE_LENGTH = 100_000
+MAX_TEST_CASES = 25
+MAX_STDIN_LENGTH = 64_000
+
+def _set_resource_limits(mem=MEM_LIMIT, cpu=CPU_LIMIT, nproc=NPROC_LIMIT):
     """Apply resource limits to the child process (Unix only)."""
     if resource is None:
         return
     try:
-        resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))
-        resource.setrlimit(resource.RLIMIT_CPU, (CPU_LIMIT, CPU_LIMIT))
+        resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
         resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_LIMIT, FILE_LIMIT))
-    except (ValueError, resource.error):
+        resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
+    except (ValueError, resource.error, OSError):
         pass
+
+def _run_sandboxed(cmd, stdin: str, timeout: int, compile_step: bool = False) -> dict:
+    """Run a command with resource limits and full process-group cleanup."""
+    if resource is not None:
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+            preexec_fn=_set_resource_limits(
+                mem=COMPILE_MEM_LIMIT if compile_step else MEM_LIMIT,
+                cpu=COMPILE_CPU_LIMIT if compile_step else CPU_LIMIT,
+                nproc=COMPILE_NPROC_LIMIT if compile_step else NPROC_LIMIT,
+            ),
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = proc.communicate(input=stdin, timeout=timeout)
+            return {"stdout": stdout, "stderr": stderr, "returncode": proc.returncode, "timed_out": False}
+        except subprocess.TimeoutExpired:
+            # Kill the whole process group so spawned children can't outlive us.
+            try:
+                import signal
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                pass
+            stdout, stderr = proc.communicate()
+            return {"stdout": stdout or "", "stderr": stderr or "", "returncode": -1, "timed_out": True}
+    # Fallback (Windows/dev): plain run with wall-clock timeout only.
+    try:
+        result = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=timeout)
+        return {"stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode, "timed_out": False}
+    except subprocess.TimeoutExpired:
+        return {"stdout": "", "stderr": "", "returncode": -1, "timed_out": True}
+
+def _sandbox_kwargs():
+    """Deprecated helper kept for compatibility; limits are applied in _run_sandboxed."""
+    return {}
 
 def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> dict:
     cfg = LANG_CONFIG.get(language)
@@ -170,52 +213,38 @@ def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> 
             src = os.path.join(tmpdir, f"{classname}.java")
             with open(src, "w") as f:
                 f.write(code)
-            compile_result = subprocess.run(
-                ["javac", src], capture_output=True, text=True, timeout=15,
-                **_sandbox_kwargs(),
-            )
-            if compile_result.returncode != 0:
-                return {"output": "", "error": compile_result.stderr.strip(), "returncode": 1, "time_ms": 0, "compile_error": True}
-            run_result = subprocess.run(
-                ["java", "-cp", tmpdir, classname],
-                input=str(stdin), capture_output=True, text=True, timeout=timeout,
-                **_sandbox_kwargs(),
+            compile_result = _run_sandboxed(["javac", src], "", 20, compile_step=True)
+            if compile_result["returncode"] != 0:
+                return {"output": "", "error": compile_result["stderr"].strip(), "returncode": 1, "time_ms": 0, "compile_error": True}
+            run_result = _run_sandboxed(
+                ["java", "-cp", tmpdir, classname], str(stdin), timeout
             )
             elapsed = int((time.time() - start) * 1000)
-            return {"output": run_result.stdout.strip(), "error": run_result.stderr.strip(), "returncode": run_result.returncode, "time_ms": elapsed}
+            error = "Time Limit Exceeded" if run_result["timed_out"] else run_result["stderr"].strip()
+            return {"output": run_result["stdout"].strip(), "error": error, "returncode": run_result["returncode"], "time_ms": elapsed}
 
         elif language == "cpp":
             src = os.path.join(tmpdir, "solution.cpp")
             exe = os.path.join(tmpdir, "solution")
             with open(src, "w") as f:
                 f.write(code)
-            compile_result = subprocess.run(
-                ["g++", "-O2", "-o", exe, src], capture_output=True, text=True, timeout=15,
-                **_sandbox_kwargs(),
-            )
-            if compile_result.returncode != 0:
-                return {"output": "", "error": compile_result.stderr.strip(), "returncode": 1, "time_ms": 0, "compile_error": True}
-            run_result = subprocess.run(
-                [exe], input=str(stdin), capture_output=True, text=True, timeout=timeout,
-                **_sandbox_kwargs(),
-            )
+            compile_result = _run_sandboxed(["g++", "-O2", "-o", exe, src], "", 20, compile_step=True)
+            if compile_result["returncode"] != 0:
+                return {"output": "", "error": compile_result["stderr"].strip(), "returncode": 1, "time_ms": 0, "compile_error": True}
+            run_result = _run_sandboxed([exe], str(stdin), timeout)
             elapsed = int((time.time() - start) * 1000)
-            return {"output": run_result.stdout.strip(), "error": run_result.stderr.strip(), "returncode": run_result.returncode, "time_ms": elapsed}
+            error = "Time Limit Exceeded" if run_result["timed_out"] else run_result["stderr"].strip()
+            return {"output": run_result["stdout"].strip(), "error": error, "returncode": run_result["returncode"], "time_ms": elapsed}
 
         else:
             fname = os.path.join(tmpdir, f"solution{cfg['suffix']}")
             with open(fname, "w") as f:
                 f.write(code)
-            run_result = subprocess.run(
-                cfg["run"](fname, None),
-                input=str(stdin), capture_output=True, text=True, timeout=timeout,
-                **_sandbox_kwargs(),
-            )
+            run_result = _run_sandboxed(cfg["run"](fname, None), str(stdin), timeout)
             elapsed = int((time.time() - start) * 1000)
-            return {"output": run_result.stdout.strip(), "error": run_result.stderr.strip(), "returncode": run_result.returncode, "time_ms": elapsed}
+            error = "Time Limit Exceeded" if run_result["timed_out"] else run_result["stderr"].strip()
+            return {"output": run_result["stdout"].strip(), "error": error, "returncode": run_result["returncode"], "time_ms": elapsed}
 
-    except subprocess.TimeoutExpired:
-        return {"output": "", "error": "Time Limit Exceeded", "returncode": -1, "time_ms": timeout * 1000}
     except Exception as e:
         return {"output": "", "error": str(e), "returncode": -1, "time_ms": 0}
     finally:
@@ -223,13 +252,20 @@ def run_code_safely(code: str, language: str, stdin: str, timeout: int = 10) -> 
 
 @app.post("/judge")
 async def judge_code(req: JudgeRequest):
+    # Abuse protection: cap payload sizes and case counts.
+    if len(req.code) > MAX_CODE_LENGTH:
+        raise HTTPException(413, "Code too large")
+    if len(req.test_cases) > MAX_TEST_CASES:
+        raise HTTPException(400, f"Too many test cases (max {MAX_TEST_CASES})")
+
     results = []
     passed = 0
     total_time = 0
     compile_error = None
 
     for i, tc in enumerate(req.test_cases):
-        run = run_code_safely(req.code, req.language, str(tc.get("input", "")))
+        stdin_data = str(tc.get("input", ""))[:MAX_STDIN_LENGTH]
+        run = run_code_safely(req.code, req.language, stdin_data)
 
         if run.get("compile_error") and i == 0:
             compile_error = run["error"]
