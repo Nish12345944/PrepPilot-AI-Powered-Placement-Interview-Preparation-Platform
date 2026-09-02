@@ -3,6 +3,7 @@ services:
   - type: web
     name: preppilot-backend
     runtime: node
+    plan: free
     rootDir: backend
     buildCommand: npm ci
     startCommand: npm start
@@ -10,149 +11,178 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # NOTE: do not set PORT — Render injects it and the server binds to it.
+
+      # Render injects the PORT automatically.
       - key: DATABASE_URL
         fromDatabase:
           name: preppilot-db
           property: connectionString
+
       - key: REDIS_URL
         fromService:
           name: preppilot-redis
-          type: redis
+          type: keyvalue
           property: connectionString
+
       - key: JWT_SECRET
         generateValue: true
+
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      # Without these, jwt.sign would receive expiresIn: undefined and
-      # tokens would NEVER expire — always set them explicitly.
+
       - key: JWT_EXPIRES_IN
         value: 15m
+
       - key: JWT_REFRESH_EXPIRES_IN
         value: 7d
+
+      # Free Render web services cannot receive private-network
+      # traffic, so use their public HTTPS URLs.
       - key: AI_INTERVIEW_URL
-        fromService:
-          name: preppilot-ai-interview
-          type: web
-          property: host
+        value: https://preppilot-ai-interview.onrender.com
+
       - key: AI_LEARNING_URL
-        fromService:
-          name: preppilot-ai-learning
-          type: web
-          property: host
+        value: https://preppilot-ai-learning.onrender.com
+
       - key: AI_RESUME_URL
-        fromService:
-          name: preppilot-ai-resume
-          type: web
-          property: host
+        value: https://preppilot-ai-resume.onrender.com
+
       - key: AI_COPILOT_URL
-        fromService:
-          name: preppilot-ai-copilot
-          type: web
-          property: host
+        value: https://preppilot-ai-copilot.onrender.com
+
+      # Public frontend URL used for CORS/origin configuration.
       - key: FRONTEND_URL
-        fromService:
-          name: preppilot-frontend
-          type: web
-          property: host
+        value: https://preppilot-frontend.onrender.com
+
 
   # ── AI Interview ─────────────────────────────────────────────
   - type: web
     name: preppilot-ai-interview
     runtime: python
+    plan: free
     rootDir: ai-services
+
     # g++ / default-jdk are required for the code judge sandbox.
     buildCommand: pip install -r requirements.txt && apt-get update && apt-get install -y --no-install-recommends g++ default-jdk
-    # ${PORT:-8001} — Render injects PORT; 8001 is the local/docker default.
+
     startCommand: uvicorn interview.main:app --host 0.0.0.0 --port ${PORT:-8001}
+
     healthCheckPath: /health
+
     envVars:
       - key: GEMINI_API_KEY
         sync: false
+
       - key: MODEL_NAME
         value: gemini-2.5-flash-lite
+
       - key: EMBEDDING_MODEL
         value: gemini-embedding-001
+
 
   # ── AI Learning ──────────────────────────────────────────────
   - type: web
     name: preppilot-ai-learning
     runtime: python
+    plan: free
     rootDir: ai-services
+
     buildCommand: pip install -r requirements.txt
+
     startCommand: uvicorn learning.main:app --host 0.0.0.0 --port ${PORT:-8002}
+
     healthCheckPath: /health
+
     envVars:
       - key: GEMINI_API_KEY
         sync: false
+
       - key: MODEL_NAME
         value: gemini-2.5-flash-lite
+
       - key: EMBEDDING_MODEL
         value: gemini-embedding-001
+
 
   # ── AI Resume ────────────────────────────────────────────────
   - type: web
     name: preppilot-ai-resume
     runtime: python
+    plan: free
     rootDir: ai-services
+
     buildCommand: pip install -r requirements.txt
+
     startCommand: uvicorn resume.main:app --host 0.0.0.0 --port ${PORT:-8003}
+
     healthCheckPath: /health
+
     envVars:
       - key: GEMINI_API_KEY
         sync: false
+
       - key: MODEL_NAME
         value: gemini-2.5-flash-lite
+
       - key: EMBEDDING_MODEL
         value: gemini-embedding-001
+
 
   # ── AI Copilot ───────────────────────────────────────────────
   - type: web
     name: preppilot-ai-copilot
     runtime: python
+    plan: free
     rootDir: ai-services
+
     buildCommand: pip install -r requirements.txt
+
     startCommand: uvicorn copilot.main:app --host 0.0.0.0 --port ${PORT:-8004}
+
     healthCheckPath: /health
+
     envVars:
       - key: GEMINI_API_KEY
         sync: false
+
       - key: MODEL_NAME
         value: gemini-2.5-flash-lite
+
       - key: EMBEDDING_MODEL
         value: gemini-embedding-001
+
 
   # ── Frontend ─────────────────────────────────────────────────
   - type: web
     name: preppilot-frontend
     runtime: node
+    plan: free
     rootDir: frontend
-    # Next.js standalone output does NOT include .next/static or public/,
-    # so they must be copied into the standalone dir or CSS/JS will 404.
-    # (public/ is copied only if it exists.)
+
+    # Next.js standalone output does not include .next/static
+    # or public/, so copy them into the standalone directory.
     buildCommand: npm ci && npm run build && cp -r .next/static .next/standalone/.next/static && ([ -d public ] && cp -r public .next/standalone/public || true)
+
     startCommand: node .next/standalone/server.js
+
     healthCheckPath: /
+
     envVars:
       - key: NODE_ENV
         value: production
-      # NEXT_PUBLIC_* are inlined into the client bundle at BUILD time.
-      # Must be full URLs; the subdomain matches the backend service name.
-      # If Render assigns a different URL (shown on the service dashboard),
-      # update both values here and redeploy the frontend.
+
+      # NEXT_PUBLIC_* variables are embedded into the frontend
+      # during the build.
       - key: NEXT_PUBLIC_API_URL
         value: https://preppilot-backend.onrender.com/api
+
       - key: NEXT_PUBLIC_WS_URL
         value: https://preppilot-backend.onrender.com
-      # NOTE: do not set PORT — Next standalone binds to Render's injected PORT.
 
+
+# ── PostgreSQL ─────────────────────────────────────────────────
 databases:
   - name: preppilot-db
     databaseName: preppilot_db
     user: preppilot
     plan: free
-    # Free Postgres expires after 30 days — upgrade the plan for production.
-
-  - name: preppilot-redis
-    plan: free
-
