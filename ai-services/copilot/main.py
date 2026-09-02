@@ -5,7 +5,7 @@ Port: 8004
 import os
 import json
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from dotenv import load_dotenv
 
@@ -18,8 +18,8 @@ app = FastAPI(title="PrepPilot Copilot AI", version="2.0.0")
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    message: str
-    history: List[dict]
+    message: str = Field(max_length=8_000)
+    history: List[dict] = Field(default_factory=list, max_length=50)
     user_context: dict
 
 # ── Intent Detection ──────────────────────────────────────────────────────────

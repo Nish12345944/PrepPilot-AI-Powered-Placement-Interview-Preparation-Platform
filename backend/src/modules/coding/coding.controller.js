@@ -2,6 +2,7 @@ const { query } = require('../../config/db');
 const axios = require('axios');
 const { awardXP, evaluateBadgeAwards } = require('../gamification/gamification.controller');
 const { aiUrl } = require('../../utils/aiUrl');
+const { safeErrorMessage } = require('../../middleware/errorHandler');
 
 const AI_TIMEOUT = 30000;
 
@@ -16,7 +17,8 @@ const parseJson = (value, fallback) => {
 
 // Get problems with adaptive difficulty
 const getProblems = async (req, res) => {
-  const { topic, difficulty, company, page = 1, limit = 20 } = req.query;
+  try {
+    const { topic, difficulty, company, page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
   const params = [req.user.id];
   let filters = '';
@@ -44,11 +46,15 @@ const getProblems = async (req, res) => {
     [...params, limit, offset]
   );
 
-  res.json(rows);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 const getProblemById = async (req, res) => {
-  const { rows } = await query(
+  try {
+    const { rows } = await query(
     `SELECT q.id, q.title, q.description, q.type, q.difficulty, q.company_tags,
             q.role_tags, q.options, q.time_limit_sec, q.xp_reward, q.hints,
             q.topic_id, q.created_at,
@@ -73,8 +79,11 @@ const getProblemById = async (req, res) => {
   };
 
   // Hide hidden test cases from the client
-  problem.test_cases = problem.test_cases.filter((tc) => !tc.is_hidden);
-  res.json(problem);
+    problem.test_cases = problem.test_cases.filter((tc) => !tc.is_hidden);
+    res.json(problem);
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 // Submit code for judging
@@ -143,7 +152,8 @@ const submitCode = async (req, res) => {
 };
 
 const getSubmissions = async (req, res) => {
-  const { problem_id } = req.params; // this is questions.id
+  try {
+    const { problem_id } = req.params; // this is questions.id
   const { rows } = await query(
     `SELECT cs.id, cs.language, cs.status, cs.runtime_ms, cs.memory_kb, cs.submitted_at
      FROM code_submissions cs
@@ -152,11 +162,15 @@ const getSubmissions = async (req, res) => {
      ORDER BY cs.submitted_at DESC LIMIT 10`,
     [req.user.id, problem_id]
   );
-  res.json(rows);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 const getHint = async (req, res) => {
-  const { problem_id, code, language, error, wrong_cases, hint_level } = req.body;
+  try {
+    const { problem_id, code, language, error, wrong_cases, hint_level } = req.body;
 
   const { rows } = await query(
     'SELECT q.title, q.description FROM questions q WHERE q.id = $1',
@@ -171,8 +185,14 @@ const getHint = async (req, res) => {
     error: error || null,
     wrong_cases: wrong_cases || [],
     hint_level: hint_level || 1,
-  }, { timeout: AI_TIMEOUT });
-  res.json(data);
+    }, { timeout: AI_TIMEOUT });
+    res.json(data);
+  } catch (err) {
+    if (err.response?.status === 400) {
+      return res.status(400).json({ error: safeErrorMessage(err, 'Invalid hint request') });
+    }
+    res.status(500).json({ error: safeErrorMessage(err, 'Hint service unavailable') });
+  }
 };
 
 module.exports = { getProblems, getProblemById, submitCode, getSubmissions, getHint };

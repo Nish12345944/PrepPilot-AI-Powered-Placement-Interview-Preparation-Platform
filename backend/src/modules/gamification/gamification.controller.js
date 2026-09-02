@@ -1,4 +1,7 @@
 const { query } = require('../../config/db');
+const redis = require('../../config/redis');
+const logger = require('../../utils/logger');
+const { safeErrorMessage } = require('../../middleware/errorHandler');
 
 // ── Badge Evaluation Engine ───────────────────────────────────────────────────
 
@@ -108,9 +111,9 @@ const evaluateBadgeAwards = async (userId) => {
         );
       }
     }
-    return newlyAwarded;
+        return newlyAwarded;
   } catch (err) {
-    console.error('Badge evaluation failed:', err.message);
+    logger.error('Badge evaluation failed:', err.message);
     return [];
   }
 };
@@ -143,25 +146,31 @@ const awardXP = async (userId, amount, reason, referenceId = null) => {
       [amount, userId]
     );
 
-    // Check if user leveled up for notification
+        // Check if user leveled up for notification.
+    // Track the last-known level in Redis (per-user) so this is:
+    //   • multi-instance safe
+    //   • survives restarts
+    //   • not an unbounded global (no memory leak)
     const { rows: profile } = await query(
       'SELECT level, total_xp FROM user_profiles WHERE user_id = $1',
       [userId]
     );
     if (profile[0]) {
       const newLevel = Math.floor(profile[0].total_xp / 500) + 1;
-      if (newLevel > (global.prevLevels?.[userId] || 0)) {
+      const levelKey = `user_level:${userId}`;
+      const prevLevelStr = await redis.get(levelKey);
+      const prevLevel = parseInt(prevLevelStr || '0', 10);
+      if (newLevel > prevLevel) {
         await query(
           `INSERT INTO notifications (user_id, title, body, type, metadata)
            VALUES ($1, 'Level Up!', $2, 'achievement', $3)`,
           [userId, `You reached Level ${newLevel}!`, JSON.stringify({ level: newLevel })]
         );
       }
-      global.prevLevels = global.prevLevels || {};
-      global.prevLevels[userId] = newLevel;
+      await redis.set(levelKey, String(newLevel), 86400 * 30); // 30-day TTL
     }
   } catch (err) {
-    console.error('XP award failed:', err.message);
+    logger.error('XP award failed:', err.message);
   }
 };
 
@@ -217,7 +226,7 @@ const getAchievements = async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 

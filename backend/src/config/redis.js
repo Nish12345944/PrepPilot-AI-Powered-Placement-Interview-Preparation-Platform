@@ -6,7 +6,12 @@ const client = redisUrl
   ? createClient({
       url: redisUrl,
       socket: {
-        reconnectStrategy: false,
+        // Reconnect with exponential backoff (capped at 30s) so a transient
+        // Redis blip doesn't permanently take the cache offline.
+        reconnectStrategy: (retries) => {
+          const delay = Math.min(retries * 50, 30000); // 0.5s, 1s, … 30s cap
+          return delay;
+        },
         connectTimeout: 5000,
       },
     })
@@ -21,6 +26,13 @@ if (client) {
   client.on('connect', () => {
     redisAvailable = true;
     logger.info('Redis connected');
+  });
+  client.on('reconnecting', () => {
+    logger.info('Redis reconnecting…');
+  });
+  client.on('end', () => {
+    redisAvailable = false;
+    logger.warn('Redis connection ended');
   });
 }
 

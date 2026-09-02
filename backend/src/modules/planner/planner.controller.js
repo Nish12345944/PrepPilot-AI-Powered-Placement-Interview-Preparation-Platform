@@ -1,12 +1,14 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
 const { aiUrl } = require('../../utils/aiUrl');
+const { safeErrorMessage } = require('../../middleware/errorHandler');
 
 const AI_TIMEOUT = 30000;
 
 // Auto-generate daily plan using AI
 const generateDailyPlan = async (req, res) => {
-  const userId = req.user.id;
+  try {
+    const userId = req.user.id;
   const today = new Date().toISOString().split('T')[0];
 
   // Check if plan already exists — return the full plan WITH its tasks so the
@@ -85,11 +87,15 @@ const generateDailyPlan = async (req, res) => {
     [planRow[0].id]
   );
 
-  res.status(201).json({ plan: planRow[0], tasks });
+    res.status(201).json({ plan: planRow[0], tasks });
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 const getTodayPlan = async (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+  try {
+    const today = new Date().toISOString().split('T')[0];
   const { rows: plan } = await query(
     'SELECT * FROM daily_plans WHERE user_id = $1 AND plan_date = $2',
     [req.user.id, today]
@@ -102,11 +108,15 @@ const getTodayPlan = async (req, res) => {
     [plan[0].id]
   );
 
-  res.json({ plan: plan[0], tasks });
+    res.json({ plan: plan[0], tasks });
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 const updateTaskStatus = async (req, res) => {
-  const { task_id } = req.params;
+  try {
+    const { task_id } = req.params;
   const { status } = req.body;
 
   const allowed = ['pending', 'completed', 'skipped', 'rescheduled'];
@@ -139,7 +149,10 @@ const updateTaskStatus = async (req, res) => {
     [rows[0].plan_id]
   );
 
-  res.json(rows[0]);
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 module.exports = { generateDailyPlan, getTodayPlan, updateTaskStatus };

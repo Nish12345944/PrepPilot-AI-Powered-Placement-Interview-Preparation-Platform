@@ -3,6 +3,7 @@ const axios = require('axios');
 const multer = require('multer');
 const path = require('path');
 const { aiUrl } = require('../../utils/aiUrl');
+const { safeErrorMessage } = require('../../middleware/errorHandler');
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx'];
 const ALLOWED_MIMES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
@@ -15,7 +16,6 @@ const upload = multer({
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
       return cb(new Error('Only PDF, DOC, and DOCX files are allowed'));
     }
-    // Validate MIME type as well (defense in depth)
     if (file.mimetype && !ALLOWED_MIMES.includes(file.mimetype)) {
       return cb(new Error('Invalid file type. Only PDF, DOC, and DOCX files are allowed.'));
     }
@@ -26,9 +26,7 @@ const upload = multer({
 const uploadResume = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
     const fileUrl = `/uploads/resumes/${req.user.id}_${Date.now()}${path.extname(req.file.originalname)}`;
-
     let parsed;
     try {
       const { data } = await axios.post(
@@ -40,30 +38,18 @@ const uploadResume = async (req, res) => {
     } catch (aiErr) {
       return res.status(502).json({ error: 'Resume parsing service unavailable. Please try again.' });
     }
-
     await query('UPDATE resumes SET is_active = FALSE WHERE user_id = $1', [req.user.id]);
-
     const { rows } = await query(
-      `INSERT INTO resumes (user_id, file_url, raw_text, parsed_data)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+      `INSERT INTO resumes (user_id, file_url, raw_text, parsed_data) VALUES ($1, $2, $3, $4) RETURNING *`,
       [req.user.id, fileUrl, parsed.raw_text, JSON.stringify(parsed.structured)]
     );
-
     if (parsed.structured?.skills?.length) {
-      await query(
-        'UPDATE user_profiles SET skills = $1 WHERE user_id = $2',
-        [parsed.structured.skills, req.user.id]
-      );
+      await query('UPDATE user_profiles SET skills = $1 WHERE user_id = $2', [parsed.structured.skills, req.user.id]);
     }
-
     const row = rows[0];
-    // Return parsed_data as object (not string) for frontend
-    res.status(201).json({
-      ...row,
-      parsed_data: typeof row.parsed_data === 'string' ? JSON.parse(row.parsed_data) : row.parsed_data,
-    });
+    res.status(201).json({ ...row, parsed_data: typeof row.parsed_data === 'string' ? JSON.parse(row.parsed_data) : row.parsed_data });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Upload failed' });
+    res.status(500).json({ error: safeErrorMessage(err, 'Upload failed') });
   }
 };
 
@@ -72,17 +58,9 @@ const analyzeResume = async (req, res) => {
     const { resume_id, job_description } = req.body;
     if (!resume_id || !job_description?.trim())
       return res.status(400).json({ error: 'resume_id and job_description are required' });
-
-    const { rows: resumes } = await query(
-      'SELECT * FROM resumes WHERE id = $1 AND user_id = $2',
-      [resume_id, req.user.id]
-    );
+    const { rows: resumes } = await query('SELECT * FROM resumes WHERE id = $1 AND user_id = $2', [resume_id, req.user.id]);
     if (!resumes[0]) return res.status(404).json({ error: 'Resume not found' });
-
-    const parsedData = typeof resumes[0].parsed_data === 'string'
-      ? JSON.parse(resumes[0].parsed_data)
-      : resumes[0].parsed_data;
-
+    const parsedData = typeof resumes[0].parsed_data === 'string' ? JSON.parse(resumes[0].parsed_data) : resumes[0].parsed_data;
     let analysis;
     try {
       const { data } = await axios.post(
@@ -94,58 +72,43 @@ const analyzeResume = async (req, res) => {
     } catch (aiErr) {
       return res.status(502).json({ error: 'Analysis service unavailable. Please try again.' });
     }
-
     await query(
-      `INSERT INTO resume_analyses (resume_id, job_description, ats_score, keyword_matches, section_scores, improvements)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        resume_id, job_description, analysis.ats_score,
-        JSON.stringify(analysis.keyword_matches),
-        JSON.stringify(analysis.section_scores),
-        JSON.stringify(analysis.improvements),
-      ]
+      `INSERT INTO resume_analyses (resume_id, job_description, ats_score, keyword_matches, section_scores, improvements) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [resume_id, job_description, analysis.ats_score, JSON.stringify(analysis.keyword_matches), JSON.stringify(analysis.section_scores), JSON.stringify(analysis.improvements)]
     );
-
-    // Return the analysis directly (not the DB row) so frontend gets the right shape
     res.json(analysis);
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Analysis failed' });
+    res.status(500).json({ error: safeErrorMessage(err, 'Analysis failed') });
   }
 };
 
-// Handle multer errors (file type / size)
 const handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large. Max 5MB.' });
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: 'File upload error' });
   }
-  if (err) return res.status(400).json({ error: err.message });
+  if (err) return res.status(400).json({ error: 'Invalid upload' });
   next();
 };
 
 const getResumes = async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT id, file_url, is_active, uploaded_at,
-              (parsed_data->>'full_name') as full_name
-       FROM resumes WHERE user_id = $1 ORDER BY uploaded_at DESC`,
+      `SELECT id, file_url, is_active, uploaded_at, (parsed_data->>'full_name') as full_name FROM resumes WHERE user_id = $1 ORDER BY uploaded_at DESC`,
       [req.user.id]
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
 const getAnalyses = async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT ra.*, r.file_url FROM resume_analyses ra
-       JOIN resumes r ON r.id = ra.resume_id
-       WHERE r.user_id = $1 ORDER BY ra.analyzed_at DESC`,
+      `SELECT ra.*, r.file_url FROM resume_analyses ra JOIN resumes r ON r.id = ra.resume_id WHERE r.user_id = $1 ORDER BY ra.analyzed_at DESC`,
       [req.user.id]
     );
-    // Parse JSONB fields
     const parsed = rows.map(r => ({
       ...r,
       keyword_matches: typeof r.keyword_matches === 'string' ? JSON.parse(r.keyword_matches) : r.keyword_matches,
@@ -154,7 +117,7 @@ const getAnalyses = async (req, res) => {
     }));
     res.json(parsed);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 

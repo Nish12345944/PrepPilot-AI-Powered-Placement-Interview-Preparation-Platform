@@ -62,3 +62,21 @@ const notFoundHandler = (req, res) => {
 
 module.exports = errorHandler;
 module.exports.notFoundHandler = notFoundHandler;
+
+/**
+ * Return a client-safe error message.
+ * In production, generic "Internal server error" is returned for unexpected
+ * 500-level failures so stack traces / SQL errors are never leaked to clients.
+ * Client errors (4xx) keep their original message since those are controlled
+ * by the application.
+ */
+const safeErrorMessage = (err, fallback = 'Internal server error') => {
+  const isProd = process.env.NODE_ENV === 'production';
+  if (!isProd) return err.message || fallback;
+  // 4xx errors are application-level (validation, auth, etc.) — safe to show.
+  if (err.status >= 400 && err.status < 500) return err.message || fallback;
+  // Don't leak internal details for 5xx in production.
+  return fallback;
+};
+
+module.exports.safeErrorMessage = safeErrorMessage;

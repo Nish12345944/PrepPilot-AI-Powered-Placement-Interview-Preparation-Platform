@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { query } = require('../../config/db');
 const redis = require('../../config/redis');
+const logger = require('../../utils/logger');
 
 // Build a mailer only if SMTP is configured; otherwise gracefully skip sending
 // (reset requests still return the generic success message to avoid enumeration).
@@ -17,11 +18,13 @@ const mailer = process.env.SMTP_HOST
   : null;
 
 const generateTokens = (userId) => {
+  // Defaults matter: without them jwt.sign gets expiresIn: undefined and
+  // tokens NEVER expire. Render/local .env should also set these explicitly.
   const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+    expiresIn: process.env.JWT_EXPIRES_IN || '15m',
   });
   const refreshToken = jwt.sign({ userId }, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN,
+    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   });
   return { accessToken, refreshToken };
 };
@@ -180,14 +183,13 @@ const forgotPassword = async (req, res) => {
                <a href="${resetUrl}">${resetUrl}</a>
                <p>If you didn't request this, ignore this email.</p>`,
       });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Password reset email failed:', err.message);
+        } catch (err) {
+      // Log server-side only; never expose the token or full reset URL.
+      logger.error('Password reset email failed:', err.message);
     }
   } else {
-    // SMTP is not configured — surface a log line for operators.
-    // eslint-disable-next-line no-console
-    console.warn(`SMTP not configured; password reset link for user ${rows[0].id}: ${resetUrl}`);
+    // SMTP is not configured — surface a log line for operators without leaking the token.
+    logger.warn(`SMTP not configured; password reset link requested for user ${rows[0].id}`);
   }
 
   res.json({ message: 'If that email exists, a reset link has been sent.' });

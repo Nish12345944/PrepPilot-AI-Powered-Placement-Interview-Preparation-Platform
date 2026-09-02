@@ -14,7 +14,7 @@ try:
 except ImportError:
     resource = None
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from dotenv import load_dotenv
 
@@ -34,20 +34,20 @@ app = FastAPI(title="PrepPilot Interview AI", version="1.0.0")
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class EvaluateRequest(BaseModel):
-    question_id: str
-    user_answer: str
-    session_type: str
-    question_title: Optional[str] = None
-    question_description: Optional[str] = None
-    correct_answer: Optional[str] = None
+    question_id: str = Field(max_length=100)
+    user_answer: str = Field(max_length=20_000)
+    session_type: str = Field(max_length=50)
+    question_title: Optional[str] = Field(default=None, max_length=500)
+    question_description: Optional[str] = Field(default=None, max_length=10_000)
+    correct_answer: Optional[str] = Field(default=None, max_length=10_000)
 
 class JudgeRequest(BaseModel):
-    code: str
-    language: str
-    test_cases: List[dict]
+    code: str = Field(max_length=100_000)
+    language: str = Field(max_length=30)
+    test_cases: List[dict] = Field(max_length=50)
 
 class SessionFeedbackRequest(BaseModel):
-    responses: List[dict]
+    responses: List[dict] = Field(max_length=100)
     avg_score: float
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
@@ -110,9 +110,9 @@ Candidate Answer: {req.user_answer[:2000]}"""
 # ── Code Judge ────────────────────────────────────────────────────────────────
 
 class HintRequest(BaseModel):
-    code: str
-    language: str
-    problem_title: str
+    code: str = Field(max_length=100_000)
+    language: str = Field(max_length=30)
+    problem_title: str = Field(max_length=300)
     problem_description: str
     error: Optional[str] = None
     wrong_cases: Optional[List[dict]] = None

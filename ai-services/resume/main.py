@@ -8,7 +8,7 @@ import json
 import base64
 import io
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -27,12 +27,12 @@ except ImportError:
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class ParseRequest(BaseModel):
-    file_content: str  # base64 encoded
-    file_type: str
+    file_content: str = Field(max_length=8_000_000)  # base64 encoded (≤ ~5MB binary)
+    file_type: str = Field(max_length=100)
 
 class AnalyzeRequest(BaseModel):
-    resume_text: str
-    job_description: str
+    resume_text: str = Field(max_length=50_000)
+    job_description: str = Field(max_length=20_000)
     parsed_data: Optional[dict] = None
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

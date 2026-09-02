@@ -17,6 +17,7 @@ const logger = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
 const { notFoundHandler } = require('./middleware/errorHandler');
 const { setIO } = require('./utils/socket');
+const { normalizeUrl } = require('./utils/aiUrl');
 
 // Route imports
 const authRoutes = require('./modules/auth/auth.routes');
@@ -33,8 +34,6 @@ const profileRoutes = require('./modules/profile/profile.routes');
 
 const app = express();
 const server = http.createServer(app);
-
-const { normalizeUrl } = require('./utils/aiUrl');
 
 // CORS allowlist — FRONTEND_URL may be a comma-separated list of full URLs or
 // bare hostnames (Render `fromService host`). Entries are normalized to full
@@ -71,12 +70,25 @@ io.on('connection', (socket) => {
 
 app.set('io', io);
 
+// Trust the first proxy hop so Express honours X-Forwarded-* headers sent by
+// Render/nginx (correct client IP for rate-limiting & HSTS over HTTPS).
+app.set('trust proxy', 1);
+
 // Security middleware
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // HSTS only matters under TLS; Render terminates TLS at the edge so the
+  // backend sees HTTP — but the header is still forwarded to the client via
+  // the proxy chain.  Set a 1-year max-age.
+  hsts: process.env.NODE_ENV === 'production'
+    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+    : false,
+}));
 app.use(cors({ origin: corsOrigin, credentials: true }));
 // Request logging with timing
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: false }));
 
 // Request ID + response time for observability
 app.use((req, res, next) => {
@@ -110,6 +122,7 @@ app.use('/api/auth/register', authLimiter);
   '/api/resume/analyze',
   '/api/resume/upload',
   '/api/planner/generate',
+  '/api/learning/path',
   '/api/learning/materials/generate',
   '/api/interview/sessions',
   '/api/interview/transcribe',
@@ -209,6 +222,22 @@ app.use(notFoundHandler);
 // Centralized error handler
 app.use(errorHandler);
 
+// Periodic cleanup of expired tokens (refresh tokens + password-reset tokens).
+// Runs every hour via node-cron.  Expired rows are harmless but accumulate
+// over time; cleaning them keeps the tables lean and queries fast.
+const cron = require('node-cron');
+cron.schedule('0 * * * *', async () => {
+  try {
+    await query(
+      `DELETE FROM refresh_tokens WHERE expires_at < NOW();
+       DELETE FROM password_reset_tokens WHERE expires_at < NOW() OR used = TRUE;`
+    );
+    logger.info('Expired token cleanup complete');
+  } catch (err) {
+    logger.warn('Token cleanup failed:', err.message);
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
@@ -220,6 +249,34 @@ const start = async () => {
 
   server.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
 };
+
+// ── Graceful shutdown (Render sends SIGTERM on deploys/restarts) ─────────────
+let shuttingDown = false;
+const shutdown = async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`${signal} received — shutting down gracefully…`);
+  // Stop accepting new connections; let in-flight requests finish (max 10s).
+  server.close(async () => {
+    try {
+      if (io) await io.close();
+      if (redis.client) await redis.client.quit();
+      await db.pool.end();
+      logger.info('All connections closed. Exiting.');
+      process.exit(0);
+    } catch (err) {
+      logger.error('Error during shutdown:', err.message);
+      process.exit(1);
+    }
+  });
+  // Force-exit if draining takes too long.
+  setTimeout(() => {
+    logger.warn('Forcing exit after shutdown timeout');
+    process.exit(1);
+  }, 10000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Only listen when run directly (not when required by tests/imports).
 if (require.main === module) {

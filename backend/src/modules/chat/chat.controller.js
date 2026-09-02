@@ -1,6 +1,7 @@
 const { query } = require('../../config/db');
 const axios = require('axios');
 const { aiUrl } = require('../../utils/aiUrl');
+const { safeErrorMessage } = require('../../middleware/errorHandler');
 
 const AI_TIMEOUT = 30000;
 
@@ -80,17 +81,22 @@ const sendMessage = async (req, res) => {
 };
 
 const getSessions = async (req, res) => {
-  const { rows } = await query(
+  try {
+    const { rows } = await query(
     `SELECT cs.id, cs.title, cs.created_at,
             (SELECT content FROM chat_messages WHERE session_id = cs.id ORDER BY created_at DESC LIMIT 1) as last_message
      FROM chat_sessions cs WHERE cs.user_id = $1 ORDER BY cs.created_at DESC LIMIT 20`,
     [req.user.id]
-  );
-  res.json(rows);
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 const getMessages = async (req, res) => {
-  const { session_id } = req.params;
+  try {
+    const { session_id } = req.params;
   // Only allow reading messages of sessions owned by the current user.
   const { rows: owned } = await query(
     'SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2',
@@ -98,11 +104,14 @@ const getMessages = async (req, res) => {
   );
   if (!owned[0]) return res.status(404).json({ error: 'Chat session not found' });
 
-  const { rows } = await query(
-    `SELECT * FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC`,
-    [session_id]
-  );
-  res.json(rows);
+    const { rows } = await query(
+      `SELECT * FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC`,
+      [session_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: safeErrorMessage(err) });
+  }
 };
 
 module.exports = { sendMessage, getSessions, getMessages };

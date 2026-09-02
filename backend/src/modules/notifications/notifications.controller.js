@@ -1,5 +1,7 @@
 const { query } = require('../../config/db');
 const { getIO } = require('../../utils/socket');
+const logger = require('../../utils/logger');
+const { safeErrorMessage } = require('../../middleware/errorHandler');
 
 // Get user notifications (paginated)
 const getNotifications = async (req, res) => {
@@ -36,7 +38,7 @@ const getNotifications = async (req, res) => {
       has_more: offset + notifications.length < parseInt(countResult.rows[0]?.total || 0),
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -49,7 +51,7 @@ const getUnreadCount = async (req, res) => {
     );
     res.json({ unread_count: parseInt(rows[0]?.count || 0) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -65,7 +67,7 @@ const markAsRead = async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: 'Notification not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -78,7 +80,7 @@ const markAllRead = async (req, res) => {
     );
     res.json({ message: 'All notifications marked as read' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -104,7 +106,7 @@ const createNotification = async (
     }
     return rows[0];
   } catch (err) {
-    console.error('Notification creation failed:', err.message);
+        logger.error('Notification creation failed:', err.message);
     return null;
   }
 };

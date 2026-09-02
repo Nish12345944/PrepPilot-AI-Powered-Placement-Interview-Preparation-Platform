@@ -5,6 +5,7 @@ const multer = require('multer');
 const { awardXP, evaluateBadgeAwards } = require('../gamification/gamification.controller');
 const { aiUrl } = require('../../utils/aiUrl');
 
+const { safeErrorMessage } = require('../../middleware/errorHandler');
 const AI_URL = () => aiUrl('AI_INTERVIEW_URL');
 const AI_TIMEOUT = 30000;
 
@@ -108,7 +109,7 @@ const getCompanies = async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -127,7 +128,7 @@ const getQuestionsByCompany = async (req, res) => {
     const { rows } = await query(queryText, params);
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -191,7 +192,7 @@ const startSession = async (req, res) => {
     const clientQuestions = questions.map(({ correct_answer, ...q }) => q);
     res.status(201).json({ session: rows[0], questions: clientQuestions });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Failed to start session' });
+    res.status(500).json({ error: safeErrorMessage(err, 'Failed to start session') });
   }
 };
 
@@ -263,7 +264,7 @@ const submitResponse = async (req, res) => {
 
     res.json({ response: rows[0], evaluation });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Failed to submit response' });
+    res.status(500).json({ error: safeErrorMessage(err, 'Failed to submit response') });
   }
 };
 
@@ -343,7 +344,7 @@ const completeSession = async (req, res) => {
 
     res.json({ session: updated[0], feedback });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Failed to complete session' });
+    res.status(500).json({ error: safeErrorMessage(err, 'Failed to complete session') });
   }
 };
 
@@ -361,7 +362,7 @@ const getSessions = async (req, res) => {
     const { rows } = await query(queryText, params);
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -399,7 +400,7 @@ const getSessionDetail = async (req, res) => {
       responses: parsed,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: safeErrorMessage(err) });
   }
 };
 
@@ -422,8 +423,7 @@ const transcribeAudio = async (req, res) => {
     );
     res.json(data);
   } catch (err) {
-    const msg = err.response?.data?.detail || err.message || 'Transcription failed';
-    res.status(err.response?.status || 500).json({ error: msg });
+    res.status(err.response?.status || 500).json({ error: safeErrorMessage(err, 'Transcription failed') });
   }
 };
 

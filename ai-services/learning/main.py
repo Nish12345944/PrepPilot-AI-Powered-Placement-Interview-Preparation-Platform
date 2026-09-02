@@ -6,7 +6,7 @@ import os
 import json
 import numpy as np
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Any
 from dotenv import load_dotenv
 
@@ -21,20 +21,20 @@ app = FastAPI(title="PrepPilot Learning AI", version="1.0.0")
 # ── Models ───────────────────────────────────────────────────────────────────
 
 class RecommendRequest(BaseModel):
-    user_id: str
-    performance: List[dict]
-    user_info: dict
+    user_id: str = Field(max_length=100)
+    performance: List[dict] = Field(max_length=200)
+    user_info: dict = Field(max_length=50)  # bound keys to prevent huge payloads
 
 class MaterialRequest(BaseModel):
-    topic: dict
-    material_type: str  # notes, flashcards, revision_plan, cheatsheet
-    company_target: Optional[str] = None
+    topic: dict = Field(max_length=50)
+    material_type: str = Field(max_length=50)  # notes, flashcards, revision_plan, cheatsheet
+    company_target: Optional[str] = Field(default=None, max_length=200)
     user_level: float = 50.0  # mastery score 0-100
 
 class PlanRequest(BaseModel):
-    user_id: str
-    weak_topics: List[dict]
-    user_info: dict
+    user_id: str = Field(max_length=100)
+    weak_topics: List[dict] = Field(max_length=100)
+    user_info: dict = Field(max_length=50)
     yesterday_completion: Optional[dict] = None
 
 # ── Adaptive Recommendation Engine ───────────────────────────────────────────
