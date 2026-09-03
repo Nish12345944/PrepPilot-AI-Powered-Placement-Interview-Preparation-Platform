@@ -163,7 +163,7 @@ services:
     # or public/, so copy them into the standalone directory.
     buildCommand: npm ci --include=dev && npm run build && cp -r .next/static .next/standalone/.next/static && ([ -d public ] && cp -r public .next/standalone/public || true)
 
-    startCommand: node .next/standalone/server.js
+    startCommand: HOSTNAME=0.0.0.0 node .next/standalone/server.js
 
     healthCheckPath: /
 
