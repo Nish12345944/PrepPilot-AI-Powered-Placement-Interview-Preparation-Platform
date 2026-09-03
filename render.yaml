@@ -161,7 +161,7 @@ services:
 
     # Next.js standalone output does not include .next/static
     # or public/, so copy them into the standalone directory.
-    buildCommand: npm ci && npm run build && cp -r .next/static .next/standalone/.next/static && ([ -d public ] && cp -r public .next/standalone/public || true)
+    buildCommand: npm ci --include=dev && npm run build && cp -r .next/static .next/standalone/.next/static && ([ -d public ] && cp -r public .next/standalone/public || true)
 
     startCommand: node .next/standalone/server.js
 
